@@ -48,6 +48,10 @@ class Application(tk.Frame):
         # File → ReLoad
         self.set_image(self.filename)
 
+    def menu_setting_clicked(self, event=None):
+        # フォルダ設定を開く
+        self.set_setting()
+
     def menu_quit_clicked(self):
         # ウィンドウを閉じる
         self.master.destroy() 
@@ -56,13 +60,9 @@ class Application(tk.Frame):
         # 画像を一つ戻す
         self.save() 
 
-    def menu_open_rectfile_clicked(self,event=None):
+    def menu_open_resultfolder_clicked(self,event=None):
         # 矩形情報ファイルを開く
-        self.open_rectfile()
-
-    def menu_save_rectfile_clicked(self,event=None):
-        # 矩形情報ファイルを保存
-        self.save_rectfile()
+        self.open_resultfolder()
 
     # -------------------------------------------------------------------------------
 
@@ -75,10 +75,10 @@ class Application(tk.Frame):
 
         self.file_menu.add_command(label="Open", command = self.menu_open_clicked, accelerator="Ctrl+O")
         self.file_menu.add_command(label="ReLoad", command = self.menu_reload_clicked, accelerator="Ctrl+R")
-        self.file_menu.add_command(label="Save", command = self.menu_save_clicked, accelerator="Ctrl+S")
+        self.file_menu.add_command(label="Save image", command = self.menu_save_clicked, accelerator="Ctrl+S")
+        self.file_menu.add_command(label="Setting", command = self.menu_setting_clicked)
         self.file_menu.add_separator() # セパレーターを追加
-        self.file_menu.add_command(label="Open RectFile", command = self.menu_open_rectfile_clicked)
-        self.file_menu.add_command(label="Save RectFile", command = self.menu_save_rectfile_clicked)
+        self.file_menu.add_command(label="Open Resultfolder", command = self.menu_open_resultfolder_clicked)
         self.file_menu.add_separator() # セパレーターを追加
         self.file_menu.add_command(label="Exit", command = self.menu_quit_clicked)
 
@@ -126,7 +126,6 @@ class Application(tk.Frame):
         #----------------------------
         #機種名
         type_name_lbl = tk.Label(self.tab1, text = "機種名",font=("MSゴシック","15","bold"))
-        self.TypeName = tk.StringVar() 
         self.TypeName = tk.StringVar()
         txt_type_name = tk.Entry(self.tab1,textvariable=self.TypeName)
 
@@ -261,6 +260,47 @@ class Application(tk.Frame):
         self.canvas.bind("<ButtonRelease-1>", self.left_click_release)      # 左クリックを離す
         self.rectangle=None
 
+    def set_setting(self):
+        """モーダルダイアログボックスを開く"""
+        self.dlg_modal = tk.Toplevel(self)
+        self.dlg_modal.title("アドレスを設定")
+        self.dlg_modal.geometry("600x500")
+
+        self.dlg_modal.grab_set()
+        self.dlg_modal.focus_set()
+        self.dlg_modal.transient(self.master)
+
+        dlg_test_address_label = tk.Label(self.dlg_modal,text="検査画像フォルダ")
+        dlg_test_address_label.pack()
+        dlg_test_address_label.place(x=10,y=10,height=30)
+        self.test_address_name = tk.StringVar()
+        self.test_address = tk.Entry(self.dlg_modal,textvariable=self.test_address_name)
+        self.test_address.place(x=10,y=45,width=500,height=30)
+
+        dlg_param_address_label = tk.Label(self.dlg_modal,text="検査パラメーターフォルダ")
+        dlg_param_address_label.pack()
+        dlg_param_address_label.place(x=10,y=80,height=30)
+        self.param_address_name = tk.StringVar()
+        self.param_address = tk.Entry(self.dlg_modal,textvariable=self.param_address_name)
+        self.param_address.place(x=10,y=115,width=500,height=30)
+
+        dlg_result_address_label = tk.Label(self.dlg_modal,text="検査結果出力フォルダ")
+        dlg_result_address_label.pack()
+        dlg_result_address_label.place(x=10,y=150,height=30)
+        self.result_address_name = tk.StringVar()
+        self.result_address = tk.Entry(self.dlg_modal,textvariable=self.result_address_name)
+        self.result_address.place(x=10,y=185,width=500,height=30)
+
+        #注釈
+        annotation_label_1 = tk.Label(self.dlg_modal,text="※フォルダのロットNo部分は %LOT% で指定")
+        annotation_label_2 = tk.Label(self.dlg_modal,text="※フォルダの品名部分は %PRODUCT% で指定")
+        annotation_label_1.pack()
+        annotation_label_1.place(x=10,y=230,height=30)
+        annotation_label_2.pack()
+        annotation_label_2.place(x=10,y=260,height=30)
+
+        app.wait_window(self.dlg_modal)
+
     def set_image(self, filename):
         ''' 画像ファイルを開く '''
         if not filename or filename is None:
@@ -299,58 +339,12 @@ class Application(tk.Frame):
         self.original_cv_image = self.cv_image.copy()
         self.original_cv_image = cv2.cvtColor(self.original_cv_image,cv2.COLOR_GRAY2RGB)
 
-    #矩形描画用の座標テキストファイルをオープン
-    def open_rectfile(self):
+    #検査結果がフォルダを開いてtab2とtab3のtreeに情報を表示
+    def open_resultfolder(self):
 
-        filename = filedialog.askopenfilename(title="テキストファイルオープン",\
-                filetypes=[("csv file",".csv"),("CSV",".csv")],\
-                initialdir="./")
+        folder_address = filedialog.askdirectory(title="結果フォルダオープン",initialdir="./")
 
-        rectFile = open(filename,"r")
-
-        #現在の表の項目をすべて削除
-
-        for key in self.id_list:
-            self.tree.delete(key)
-        
-        self.id_list = dict()
-
-        rect_line = rectFile.readline()
-        n=0
-        while rect_line:
-            
-            x = rect_line.split(",")[0]
-            y = rect_line.split(",")[1]
-            lx = rect_line.split(",")[2]
-            ly = rect_line.split(",")[3]
-            id_tmp=self.tree.insert("","end",values=(n,x,y,lx,ly))
-            self.id_list[id_tmp]=[n,x,y,lx,ly]
-
-            rect_line = rectFile.readline()
-            n+=1
-            
-        rectFile.close()
-
-    #矩形描画用の座標テキストファイルを保存
-    def save_rectfile(self):
-
-        filename = filedialog.asksaveasfilename(title="名前を付けて保存",\
-                filetypes=[("CSV",".csv")],\
-                initialdir="./",\
-                defaultextension = "csv")
-
-        output_rect_file = open(filename,"w")
-
-        for key in self.id_list:
-            output_line = "" 
-            for i in self.id_list[key][1:]:
-                output_line+=str(i)+","
-            output_line+="\n"
-            output_rect_file.write(output_line)
-
-        output_rect_file.close()
-
-        return 
+        print(folder_address)
 
     #画像保存
     def save(self):
@@ -365,7 +359,6 @@ class Application(tk.Frame):
 
         cv2.imwrite(filename,self.cv_image)
 
-    
     # -------------------------------------------------------------------------------
     # マウスイベント
     # -------------------------------------------------------------------------------
