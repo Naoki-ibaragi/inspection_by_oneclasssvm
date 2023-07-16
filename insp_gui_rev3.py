@@ -12,6 +12,10 @@ import glob
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg,NavigationToolbar2Tk
+import subprocess
+
+VERSION_INFO = "3.1"
+DATE_INFO = "2023/7/5"
 
 class Application(tk.Frame):
     def __init__(self, master=None):
@@ -31,6 +35,25 @@ class Application(tk.Frame):
         self.create_menu()   # メニューの作成
         self.create_widget() # ウィジェットの作成
 
+        #iniファイルの読み込み
+        try:
+            ini_file = open("./setting.ini","r")
+            ini_line = ini_file.readline()
+            while ini_line:
+                if "TEST_SAMPLE_ADDRESS" in ini_line:
+                    self.test_sample_address = ini_line.split(",")[1].replace("\n","")
+                elif "PARAMETER_ADDRESS" in ini_line:
+                    self.paramter_address = ini_line.split(",")[1].replace("\n","")
+                elif "OUTPUT_RESULT_ADDRESS" in ini_line:
+                    self.output_result_address = ini_line.split(",")[1].replace("\n","")
+                
+                ini_line = ini_file.readline()
+            
+            ini_file.close()
+
+        except:
+            print("setting.iniがありません")
+
     # -------------------------------------------------------------------------------
     # メニューイベント
     # -------------------------------------------------------------------------------
@@ -48,10 +71,6 @@ class Application(tk.Frame):
         # File → ReLoad
         self.set_image(self.filename)
 
-    def menu_setting_clicked(self, event=None):
-        # フォルダ設定を開く
-        self.set_setting()
-
     def menu_quit_clicked(self):
         # ウィンドウを閉じる
         self.master.destroy() 
@@ -61,8 +80,16 @@ class Application(tk.Frame):
         self.save() 
 
     def menu_open_resultfolder_clicked(self,event=None):
-        # 矩形情報ファイルを開く
+        # 検査結果を開く
         self.open_resultfolder()
+
+    def menu_setting_clicked(self, event=None):
+        # フォルダ設定を開く
+        self.set_setting()
+
+    def menu_version_clicked(self, event=None):
+        # フォルダ設定を開く
+        self.open_version()
 
     # -------------------------------------------------------------------------------
 
@@ -76,7 +103,6 @@ class Application(tk.Frame):
         self.file_menu.add_command(label="Open", command = self.menu_open_clicked, accelerator="Ctrl+O")
         self.file_menu.add_command(label="ReLoad", command = self.menu_reload_clicked, accelerator="Ctrl+R")
         self.file_menu.add_command(label="Save image", command = self.menu_save_clicked, accelerator="Ctrl+S")
-        self.file_menu.add_command(label="Setting", command = self.menu_setting_clicked)
         self.file_menu.add_separator() # セパレーターを追加
         self.file_menu.add_command(label="Open Resultfolder", command = self.menu_open_resultfolder_clicked)
         self.file_menu.add_separator() # セパレーターを追加
@@ -85,6 +111,15 @@ class Application(tk.Frame):
         self.menu_bar.bind_all("<Control-o>", self.menu_open_clicked) # ファイルを開くのショートカット(Ctrol-Oボタン)
         self.menu_bar.bind_all("<Control-r>", self.menu_reload_clicked) # ファイルを開くのショートカット(Ctrol-Rボタン)
         self.menu_bar.bind_all("<Control-s>", self.menu_save_clicked) # ファイルを開くのショートカット(Ctrol-Sボタン)
+
+        self.setting_menu = tk.Menu(self.menu_bar, tearoff = tk.OFF)
+        self.menu_bar.add_cascade(label="Setting", menu=self.setting_menu)
+        self.setting_menu.add_command(label="アドレス設定", command = self.menu_setting_clicked)
+
+        self.version_menu = tk.Menu(self.menu_bar, tearoff = tk.OFF)
+        self.menu_bar.add_cascade(label="Version", menu=self.version_menu)
+        self.version_menu.add_command(label="バージョン情報", command = self.menu_version_clicked)
+
         self.master.config(menu=self.menu_bar) # メニューバーの配置
  
     def create_widget(self):
@@ -262,44 +297,123 @@ class Application(tk.Frame):
 
     def set_setting(self):
         """モーダルダイアログボックスを開く"""
-        self.dlg_modal = tk.Toplevel(self)
-        self.dlg_modal.title("アドレスを設定")
-        self.dlg_modal.geometry("600x500")
+        self.dlg_setting = tk.Toplevel(self)
+        self.dlg_setting.title("アドレスを設定")
+        self.dlg_setting.geometry("650x400")
 
-        self.dlg_modal.grab_set()
-        self.dlg_modal.focus_set()
-        self.dlg_modal.transient(self.master)
+        self.dlg_setting.grab_set()
+        self.dlg_setting.focus_set()
+        self.dlg_setting.transient(self.master)
 
-        dlg_test_address_label = tk.Label(self.dlg_modal,text="検査画像フォルダ")
+        dlg_test_address_label = tk.Label(self.dlg_setting,text="検査画像フォルダ",font=("MSゴシック","15"))
         dlg_test_address_label.pack()
         dlg_test_address_label.place(x=10,y=10,height=30)
         self.test_address_name = tk.StringVar()
-        self.test_address = tk.Entry(self.dlg_modal,textvariable=self.test_address_name)
+        self.test_address = tk.Entry(self.dlg_setting,textvariable=self.test_address_name)
         self.test_address.place(x=10,y=45,width=500,height=30)
+        self.test_address.insert(0,self.test_sample_address)
 
-        dlg_param_address_label = tk.Label(self.dlg_modal,text="検査パラメーターフォルダ")
+        #参照・チェックボタンを設置
+        btn_ref_1 = tk.Button(self.dlg_setting, text = "参照", font=("MSゴシック","15"),command = lambda: self.dlg_setting_ref(1))
+        btn_ref_1.place(x=520,y=45,height=30)
+        btn_chk_1 = tk.Button(self.dlg_setting, text = "確認", font=("MSゴシック","15"),command = lambda: self.dlg_setting_chk(1))
+        btn_chk_1.place(x=580,y=45,height=30)
+
+        dlg_param_address_label = tk.Label(self.dlg_setting,text="検査パラメーターフォルダ",font=("MSゴシック","15"))
         dlg_param_address_label.pack()
         dlg_param_address_label.place(x=10,y=80,height=30)
         self.param_address_name = tk.StringVar()
-        self.param_address = tk.Entry(self.dlg_modal,textvariable=self.param_address_name)
+        self.param_address = tk.Entry(self.dlg_setting,textvariable=self.param_address_name)
         self.param_address.place(x=10,y=115,width=500,height=30)
+        self.param_address.insert(0,self.paramter_address)
 
-        dlg_result_address_label = tk.Label(self.dlg_modal,text="検査結果出力フォルダ")
+        #参照・チェックボタンを設置
+        btn_ref_2 = tk.Button(self.dlg_setting, text = "参照", font=("MSゴシック","15"),command = lambda: self.dlg_setting_ref(2))
+        btn_ref_2.place(x=520,y=115,height=30)
+        btn_chk_2 = tk.Button(self.dlg_setting, text = "確認", font=("MSゴシック","15"),command = lambda: self.dlg_setting_chk(2))
+        btn_chk_2.place(x=580,y=115,height=30)
+
+        dlg_result_address_label = tk.Label(self.dlg_setting,text="検査結果出力フォルダ",font=("MSゴシック","15"))
         dlg_result_address_label.pack()
         dlg_result_address_label.place(x=10,y=150,height=30)
         self.result_address_name = tk.StringVar()
-        self.result_address = tk.Entry(self.dlg_modal,textvariable=self.result_address_name)
+        self.result_address = tk.Entry(self.dlg_setting,textvariable=self.result_address_name)
         self.result_address.place(x=10,y=185,width=500,height=30)
+        self.result_address.insert(0,self.output_result_address)
+
+        #参照・チェックボタンを設置
+        btn_ref_3 = tk.Button(self.dlg_setting, text = "参照", font=("MSゴシック","15"),command = lambda: self.dlg_setting_ref(3))
+        btn_ref_3.place(x=520,y=185,height=30)
+        btn_chk_3 = tk.Button(self.dlg_setting, text = "確認", font=("MSゴシック","15"),command = lambda: self.dlg_setting_chk(3))
+        btn_chk_3.place(x=580,y=185,height=30)
 
         #注釈
-        annotation_label_1 = tk.Label(self.dlg_modal,text="※フォルダのロットNo部分は %LOT% で指定")
-        annotation_label_2 = tk.Label(self.dlg_modal,text="※フォルダの品名部分は %PRODUCT% で指定")
+        annotation_label_1 = tk.Label(self.dlg_setting,text="※アドレスのロットNo部分は %LOT% で指定",font=("MSゴシック","10"))
+        annotation_label_2 = tk.Label(self.dlg_setting,text="※アドレスの品名部分は %PRODUCT% で指定",font=("MSゴシック","10"))
         annotation_label_1.pack()
-        annotation_label_1.place(x=10,y=230,height=30)
+        annotation_label_1.place(x=10,y=230,height=20)
         annotation_label_2.pack()
-        annotation_label_2.place(x=10,y=260,height=30)
+        annotation_label_2.place(x=10,y=250,height=20)
 
-        app.wait_window(self.dlg_modal)
+        #閉じるボタンを設置
+        btn_close = tk.Button(self.dlg_setting, text = "閉じる", font=("MSゴシック","15"),command = self.dlg_setting_close)
+        btn_close.place(x=300,y=300,height=30)
+
+        app.wait_window(self.dlg_setting)
+
+    #参照ボタンを押したときの処理
+    def dlg_setting_ref(self,n):
+
+        address = filedialog.askdirectory(title="結果フォルダオープン",initialdir="./")
+
+        if n==1:
+            self.test_address.delete(0,tk.END)
+            self.test_address.insert(0,address)
+        elif n==2:
+            self.param_address.delete(0,tk.END)
+            self.param_address.insert(0,address)
+        elif n==3:
+            self.result_address.delete(0,tk.END)
+            self.result_address.insert(0,address)
+
+        return
+
+    #確認ボタンを押したときの処理
+    def dlg_setting_chk(self,n):
+        if n==1:
+            address = self.test_address_name.get()
+        elif n==2:
+            address = self.param_address_name.get()
+        elif n==3:
+            address = self.result_address_name.get()
+        
+        subprocess.Popen(["start",address],shell=True)
+        return
+    
+    #settingウインドウを閉じたときの処理
+    def dlg_setting_close(self):
+        #更新するかどうかのポップアップを出す
+
+        ret = messagebox.askyesno("確認","アドレスを更新しますか?")
+
+        if ret==True:
+            #iniファイルを更新する
+            ini_file = open("./setting.ini","w")
+            output_line = "TEST_SAMPLE_ADDRESS,"+self.test_address_name.get()+"\n"
+            ini_file.write(output_line)
+            output_line = "PARAMETER_ADDRESS,"+self.param_address_name.get()+"\n"
+            ini_file.write(output_line)
+            output_line = "OUTPUT_RESULT_ADDRESS,"+self.result_address_name.get()+"\n"
+            ini_file.write(output_line)
+
+            ini_file.close()
+
+            print("iniファイルを更新しました")
+            self.dlg_setting.destroy() 
+        else:
+            self.dlg_setting.destroy() 
+
+        return
 
     def set_image(self, filename):
         ''' 画像ファイルを開く '''
@@ -338,6 +452,35 @@ class Application(tk.Frame):
 
         self.original_cv_image = self.cv_image.copy()
         self.original_cv_image = cv2.cvtColor(self.original_cv_image,cv2.COLOR_GRAY2RGB)
+
+    #version情報を開く
+    def open_version(self):
+        self.dlg_version = tk.Toplevel(self.master)
+        self.dlg_version.title("バージョン情報")
+        self.dlg_version.geometry("300x150")
+
+        self.dlg_version.grab_set()
+        self.dlg_version.focus_set()
+        self.dlg_version.transient(self.master)
+
+        dlg_test_address_label = tk.Label(self.dlg_version,text="バージョン："+VERSION_INFO,font=("MSゴシック","15"))
+        dlg_test_address_label.pack()
+        dlg_test_address_label.place(x=60,y=30,height=20)
+
+        dlg_test_address_label = tk.Label(self.dlg_version,text="作成日："+DATE_INFO,font=("MSゴシック","15"))
+        dlg_test_address_label.pack()
+        dlg_test_address_label.place(x=60,y=60,height=20)
+
+        #閉じるボタンを設置
+        btn_close = tk.Button(self.dlg_version, text = "閉じる", font=("MSゴシック","15"),command = self.dlg_version_close)
+        btn_close.place(x=100,y=100,height=30)
+
+        app.wait_window(self.dlg_version)
+    
+    #dlgを閉じる関数
+    def dlg_version_close(self):
+
+        self.dlg_version.destroy() 
 
     #検査結果がフォルダを開いてtab2とtab3のtreeに情報を表示
     def open_resultfolder(self):
