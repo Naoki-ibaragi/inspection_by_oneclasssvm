@@ -22,7 +22,7 @@ class Application(tk.Frame):
         super().__init__(master)
         self.pack() 
  
-        self.my_title = "OpenCV Tkinter GUI Sample"  # タイトル
+        self.my_title = "Inspection By Oneclasssvm"  # タイトル
         self.back_color = "#FFFFFF"     # 背景色
 
         # ウィンドウの設定
@@ -43,7 +43,7 @@ class Application(tk.Frame):
                 if "TEST_SAMPLE_ADDRESS" in ini_line:
                     self.test_sample_address = ini_line.split(",")[1].replace("\n","")
                 elif "PARAMETER_ADDRESS" in ini_line:
-                    self.paramter_address = ini_line.split(",")[1].replace("\n","")
+                    self.parameter_address = ini_line.split(",")[1].replace("\n","")
                 elif "OUTPUT_RESULT_ADDRESS" in ini_line:
                     self.output_result_address = ini_line.split(",")[1].replace("\n","")
                 
@@ -241,8 +241,8 @@ class Application(tk.Frame):
         #tab3 解析のwidget
         #----------------------------
         #表
-        self.column = (0,1,2,3,4)
-        self.graph_tree=ttk.Treeview(self.tab3, columns=self.column,show="headings")
+        self.graph_column = (0,1,2,3,4)
+        self.graph_tree=ttk.Treeview(self.tab3, columns=self.graph_column,show="headings")
         self.graph_tree.bind("<<TreeviewSelect>>",self.on_graph_tree_select)
 
         self.graph_tree.column(0,width=65,anchor="center")
@@ -325,7 +325,7 @@ class Application(tk.Frame):
         self.param_address_name = tk.StringVar()
         self.param_address = tk.Entry(self.dlg_setting,textvariable=self.param_address_name)
         self.param_address.place(x=10,y=115,width=500,height=30)
-        self.param_address.insert(0,self.paramter_address)
+        self.param_address.insert(0,self.parameter_address)
 
         #参照・チェックボタンを設置
         btn_ref_2 = tk.Button(self.dlg_setting, text = "参照", font=("MSゴシック","15"),command = lambda: self.dlg_setting_ref(2))
@@ -400,10 +400,13 @@ class Application(tk.Frame):
             #iniファイルを更新する
             ini_file = open("./setting.ini","w")
             output_line = "TEST_SAMPLE_ADDRESS,"+self.test_address_name.get()+"\n"
+            self.test_sample_address = self.test_address_name.get()
             ini_file.write(output_line)
             output_line = "PARAMETER_ADDRESS,"+self.param_address_name.get()+"\n"
+            self.parameter_address = self.param_address_name.get()
             ini_file.write(output_line)
             output_line = "OUTPUT_RESULT_ADDRESS,"+self.result_address_name.get()+"\n"
+            self.output_result_address = self.result_address_name.get()
             ini_file.write(output_line)
 
             ini_file.close()
@@ -487,7 +490,108 @@ class Application(tk.Frame):
 
         folder_address = filedialog.askdirectory(title="結果フォルダオープン",initialdir="./")
 
-        print(folder_address)
+        """tab2 画像用treeの更新"""
+        self.now_result_folder = folder_address + "/"
+
+        csv_files = glob.glob(folder_address+"/*.csv")
+        result_file_address = ""
+
+        for csv_file in csv_files:
+            if "result_data" in csv_file:
+                result_file_address = csv_file
+                continue
+        
+        if result_file_address == "":
+            messagebox.showinfo("確認","resultファイルが見つかりません")
+            return
+
+        #現在の表の項目をすべて削除
+        for key in self.id_list:
+            self.tree.delete(key)
+
+        self.id_list = dict()
+        result_file = open(result_file_address,"r")
+
+        result_line = result_file.readline()
+        n = 0
+        while result_line:
+
+            if n >=3:
+                result_data = result_line.split(",")
+
+                img_name = result_data[0]
+                pass_fail = result_data[1]
+                id_tmp=self.tree.insert("","end",values=(n-2,img_name,pass_fail))
+                self.id_list[id_tmp]=[n-2,img_name,pass_fail]
+
+            result_line = result_file.readline()
+            n+=1
+
+        #元のリストを保持
+        self.original_id_list = self.id_list
+        self.now_id_list = self.id_list
+
+        result_file.close()
+
+        """"""""""""""""""""""""""
+        """tab3 データtreeの更新"""
+        """"""""""""""""""""""""""
+        self.graph_standards=[]
+
+        result_file = open(result_file_address,"r")
+
+        result_line = result_file.readline()
+
+        flag = 0
+        #resulファイルを読み込んで、規格とスコアをリストに収める
+        while result_line:
+
+            if "standard" in result_line:
+                
+                items = result_line.split(",")
+
+                for item in items:
+                    if self.is_num(item):
+                        self.graph_standards.append(float(item))
+                
+                split_data_num = len(self.graph_standards)
+                self.score_list=[[] for i in range(split_data_num)]
+            
+            if "no" in result_line:
+                flag = 1
+                result_line = result_file.readline()
+        
+            if flag==1:
+                #reverseさせる
+                items = result_line.split(",")[:-1]
+                items = items[::-1]
+                for i in range(split_data_num):
+                    self.score_list[i].append(float(items[split_data_num-i-1]))
+
+            result_line = result_file.readline()
+
+        result_file.close()
+
+        self.score_list = np.array(self.score_list)
+
+        #表にデータを追加
+        #現在の表の項目をすべて削除
+        for key in self.graph_id_list:
+            self.graph_tree.delete(key)
+
+        self.graph_id_list = dict()
+
+        for i in range(split_data_num):
+            num = i+1
+            std = self.graph_standards[i]
+            med_value = np.median(self.score_list[i])
+            max_value = np.amax(self.score_list[i])
+            min_value = np.amin(self.score_list[i])
+            
+            id_tmp=self.graph_tree.insert("","end",values=(num,std,med_value,min_value,max_value))
+            self.graph_id_list[id_tmp]=[num,std,med_value,min_value,max_value]
+
+        return
 
     #画像保存
     def save(self):
@@ -772,13 +876,14 @@ class Application(tk.Frame):
     #---------------------------#
     #解析処理                   #
     #---------------------------#
-    def result_analysis(self,result_file_address,lot_no):
-        """resultファイルを読み込んで表を更新"""
+    def result_analysis(self,type_name,lot_no):
+        """resultファイルを読み込んでtab2とtab3の表を更新"""
         """フォルダ内の1枚目の画像を読み込む"""
 
         #現在のロットフォルダを記憶
-        self.now_result_folder = "C:/workspace/chip_inspection/result/"+lot_no+"/"
+        self.now_result_folder = self.output_result_address.replace("%LOT%",lot_no).replace("%PRODUCT%",type_name) #結果ファイル置き場
 
+        result_file_address = self.now_result_folder + "result_data_"+lot_no+".csv"
         #現在の表の項目をすべて削除
         for key in self.id_list:
             self.tree.delete(key)
@@ -806,6 +911,66 @@ class Application(tk.Frame):
         self.now_id_list = self.id_list
 
         result_file.close()
+
+        """"""""""""""""""""""""""
+        """tab3 データtreeの更新"""
+        """"""""""""""""""""""""""
+        self.graph_standards=[]
+
+        result_file = open(result_file_address,"r")
+
+        result_line = result_file.readline()
+
+        flag = 0
+        #resulファイルを読み込んで、規格とスコアをリストに収める
+        while result_line:
+
+            if "standard" in result_line:
+                
+                items = result_line.split(",")
+
+                for item in items:
+                    if self.is_num(item):
+                        self.graph_standards.append(float(item))
+                
+                split_data_num = len(self.graph_standards)
+                self.score_list=[[] for i in range(split_data_num)]
+            
+            if "no" in result_line:
+                flag = 1
+                result_line = result_file.readline()
+        
+            if flag==1:
+                #reverseさせる
+                items = result_line.split(",")[:-1]
+                items = items[::-1]
+                for i in range(split_data_num):
+                    self.score_list[i].append(float(items[split_data_num-i-1]))
+
+            result_line = result_file.readline()
+
+        result_file.close()
+
+        self.score_list = np.array(self.score_list)
+
+        #表にデータを追加
+        #現在の表の項目をすべて削除
+        for key in self.graph_id_list:
+            self.graph_tree.delete(key)
+
+        self.graph_id_list = dict()
+
+        for i in range(split_data_num):
+            num = i+1
+            std = self.graph_standards[i]
+            med_value = np.median(self.score_list[i])
+            max_value = np.amax(self.score_list[i])
+            min_value = np.amin(self.score_list[i])
+            
+            id_tmp=self.graph_tree.insert("","end",values=(num,std,med_value,min_value,max_value))
+            self.graph_id_list[id_tmp]=[num,std,med_value,min_value,max_value]
+
+        return
 
     def on_graph_tree_select(self,event):
         """tab3の表wを選択したときの処理""" 
@@ -1010,7 +1175,7 @@ class Application(tk.Frame):
         insp_test = insp()
 
         #各辺のポイントを取得するための矩形情報読み込み
-        insp_test.read_setting_file(type_name,lot_no)
+        insp_test.read_setting_file(type_name,lot_no,self.test_sample_address,self.parameter_address,self.output_result_address)
 
         #分割情報,規格情報を取得
         if insp_test.STD_TYPE == "FIX":
@@ -1291,12 +1456,14 @@ class Application(tk.Frame):
 
         messagebox.showinfo("確認","処理が正常に終了しました")
 
-        self.result_analysis(insp_test.OUTPUT_RESULT_FILE,lot_no)
+        self.result_analysis(type_name,lot_no)
 
         return
 
 if __name__ == "__main__":
     root = tk.Tk()
     root.state("zoomed")
+    photo = tk.PhotoImage(file="./tk_icon.png")
+    root.iconphoto(True,photo)
     app = Application(master=root)
     app.mainloop()

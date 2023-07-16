@@ -66,12 +66,12 @@ class insp:
     #     関数     #
     #--------------#
     #設定ファイルの読み込み
-    def read_setting_file(self,TypeName,LotNo):
+    def read_setting_file(self,TypeName,LotNo,test_address,parameter_address,result_address):
 
         #各アドレスの作成
-        home_folder = "C:/workspace/chip_inspection/" #これは固定
-        parameter_folder = home_folder+"/parameter/"+ TypeName + "/" #パラメーターファイル置き場
-        result_folder = home_folder+"/result/"+ LotNo + "/" #結果ファイル置き場
+        self.TEST_SAMPLE_FOLDER = test_address.replace("%LOT%",LotNo).replace("%PRODUCT%",TypeName) #テストサンプル置き場
+        parameter_folder = parameter_address.replace("%LOT%",LotNo).replace("%PRODUCT%",TypeName) #パラメーターファイル置き場
+        result_folder = result_address.replace("%LOT%",LotNo).replace("%PRODUCT%",TypeName) #結果ファイル置き場
 
         #各フォルダの設定
         self.GOOD_SAMPLE_FOLDER=parameter_folder+"good_sample/" #良品画像が入ったフォルダ
@@ -137,8 +137,6 @@ class insp:
             elif setting_item[0] == "FILTER_LIST":
                 for filter_name in setting_item[1].split(","):
                     self.FILTER_LIST.append(filter_name.replace("\n",""))
-            elif setting_item[0] == "TEST_SAMPLE_FOLDER":
-                self.TEST_SAMPLE_FOLDER = setting_item[1].replace("\n","")+LotNo+"/"
             elif setting_item[0] == "RECT_LEFT":
                 data = setting_item[1].split(",")
                 self.rectangle_point[3][0][0] = int(data[0])
