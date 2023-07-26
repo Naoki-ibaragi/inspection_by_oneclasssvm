@@ -1258,15 +1258,17 @@ class Application(tk.Frame):
             for i,images in enumerate(good_images):
 
                 good_image_list = []
+                img_name_list = []
 
                 #opencvで読み込んだ画像をgood_image_listに入れる(ONE_TEST_SIZE分)
                 for j,image in enumerate(images):
                     img_good = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
                     good_image_list.append(img_good)
+                    img_name_list.append(image)
 
                 #差分ベクトルをgood_diff_image_listに入れていく(good_diff_image_listはsplit_numのおおきさ)
                 for j,image in enumerate(good_image_list):
-                    diff_image_list = insp_test.get_diff_image_list(img_good_average,image,split_data,brightness_data,i*insp_test.ONE_TEST_SIZE+j+1,1)
+                    diff_image_list = insp_test.get_diff_image_list(img_good_average,image,split_data,brightness_data,i*insp_test.ONE_TEST_SIZE+j+1,1,img_name_list[j])
 
                     for s in range(split_num):
                         good_diff_image_list[s].append(diff_image_list[s])
@@ -1371,17 +1373,17 @@ class Application(tk.Frame):
 
             test_image_list=[] #opencvで開いた画像を入れる
             test_diff_image_list=[] #差分ベクトルを入れる
-               
+            img_name_list = [] #画像の名前を入れる:
+
             for j,image in enumerate(images): #imagesはONE_TEST_SIZE枚画像が入っている
 
                 #画像をopencvで読み込み、リストに入れる
                 img_test = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
                 test_image_list.append(img_test)
+                img_name_list.append(image)
             
             for j,image in enumerate(test_image_list):
-
-                diff_image_list = insp_test.get_diff_image_list(img_good_average,image,split_data,brightness_data,i*insp_test.ONE_TEST_SIZE+j+1,0)
-                
+                diff_image_list = insp_test.get_diff_image_list(img_good_average,image,split_data,brightness_data,i*insp_test.ONE_TEST_SIZE+j+1,0,img_name_list[j])
                 test_diff_image_list.append(diff_image_list) #ONE_TEST_SIZE枚分の差分ベクトル
 
             #テストデータをつかってone-class-svmのスコア取得

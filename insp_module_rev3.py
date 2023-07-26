@@ -41,6 +41,9 @@ class insp:
         self.UNSHARP_SIZE = 1 #bilateral filterの程度
         self.ADJUST_ALPHA = 2.5 #画像明るさ変更係数
         self.ADJUST_BETA = 0.0 #画像明るさ変更切片
+        self.SOBEL_K = 3 #SOBELフィルタのパラメータ
+        self.sigmoid_coeff = 1.0 #sigmoidフィルタの係数
+        self.sigmoid_std = 128.0 #sigmoidフィルタの中心点
         self.theta_list=[]
         self.FILTER_LIST=[]
 
@@ -134,9 +137,15 @@ class insp:
                 self.ADJUST_ALPHA = float(setting_item[1])
             elif setting_item[0] == "ADJUST_BETA":
                 self.ADJUST_BETA = float(setting_item[1])
-            elif setting_item[0] == "FILTER_LIST":
+            elif setting_item[0] == "FILTER_LIST" and len(setting_item)>1:
                 for filter_name in setting_item[1].split(","):
                     self.FILTER_LIST.append(filter_name.replace("\n",""))
+            elif setting_item[0] == "SOBEL_K":
+                self.SOBEL_K = int(setting_item[1])
+            elif setting_item[0] == "SIGMOID_COEFF":
+                self.sigmoid_coeff = float(setting_item[1])
+            elif setting_item[0] == "SIGMOID_STD":
+                self.sigmoid_std == float(setting_item[1])
             elif setting_item[0] == "RECT_LEFT":
                 data = setting_item[1].split(",")
                 self.rectangle_point[3][0][0] = int(data[0])
@@ -486,6 +495,15 @@ class insp:
                 img_after_filter = cv2.filter2D(img_after_filter,-1,unsharp_kernel).astype("uint8")
             elif filter_name == "ADJUST":
                 img_after_filter = self.adjust(img_after_filter,self.ADJUST_ALPHA,self.ADJUST_BETA)
+            elif filter_name == "SOBEL":
+                grid_x = cv2.Sobel(img_after_filter,cv2.CV_32F,1,0,self.SOBEL_K)
+                grid_y = cv2.Sobel(img_after_filter,cv2.CV_32F,0,1,self.SOBEL_K)
+                img_after_filter = np.sqrt(grid_x**2+grid_y**2).astype("uint8")
+            elif filter_name == "SIGMOID":
+                a = self.sigmoid_coeff
+                b = self.sigmoid_std
+                img_after_filter = 255/(1+np.exp(-a*(img_after_filter-b)/255))
+                img_after_filter = img_after_filter.astype("uint8")
             else:
                 print("フィルターの指定が間違っています")
                 sys.exit()
@@ -493,7 +511,7 @@ class insp:
         return img_after_filter
 
     #差分を取得する
-    def get_diff_image_list(self,img_good_average,image,split_data,brightness_data,n,mode):
+    def get_diff_image_list(self,img_good_average,image,split_data,brightness_data,n,mode,img_path):
        
         diff_image_list=[]
 
@@ -515,13 +533,14 @@ class insp:
             self.theta_list.append([theta,x,y,w,h])
             img_name = self.OUTPUT_ALL_IMAGE+str(n)+".jpg"
             cv2.imwrite(img_name,img)
-            print("\r{}枚目を処理中".format(n),end="")
+            print("\r{}枚目 {}を処理中".format(n,img_path),end="")
         elif mode==1:
             #良品学習時
             print("\r{}枚目を処理中".format(n),end="")
 
         #スプリットする前にフィルターをかける
-        img = self.image_filter(img)
+        if len(self.FILTER_LIST) > 0:
+            img = self.image_filter(img)
 
         #split_dataで画像を切り取っていく
         for s_num,s in enumerate(split_data):
