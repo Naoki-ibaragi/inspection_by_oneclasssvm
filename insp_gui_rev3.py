@@ -31,6 +31,8 @@ class Application(tk.Frame):
 
         self.pil_image = None           # 表示する画像データ
         self.filename = None            # 最後に開いた画像ファイル名
+        self.split_info = False         #split data情報があるかどうか
+        self.split_info_list = []
  
         self.create_menu()   # メニューの作成
         self.create_widget() # ウィジェットの作成
@@ -130,10 +132,12 @@ class Application(tk.Frame):
         self.statusbar = tk.Frame(self.master)
         self.mouse_position = tk.Label(self.statusbar, relief = tk.SUNKEN, text="mouse position") # マウスの座標
         self.image_position = tk.Label(self.statusbar, relief = tk.SUNKEN, text="image position") # 画像の座標
+        self.split_position = tk.Label(self.statusbar, relief = tk.SUNKEN, text="split position") # 画像の座標
         self.label_space = tk.Label(self.statusbar, relief = tk.SUNKEN)                           # 隙間を埋めるだけ
         self.image_info = tk.Label(self.statusbar, relief = tk.SUNKEN, text="image info")         # 画像情報
         self.mouse_position.pack(side=tk.LEFT)
         self.image_position.pack(side=tk.LEFT)
+        self.split_position.pack(sid=tk.LEFT)
         self.label_space.pack(side=tk.LEFT, expand=True, fill=tk.X)
         self.image_info.pack(side=tk.RIGHT)
         self.statusbar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -543,7 +547,7 @@ class Application(tk.Frame):
         result_line = result_file.readline()
 
         flag = 0
-        #resulファイルを読み込んで、規格とスコアをリストに収める
+        #resultファイルを読み込んで、規格とスコアをリストに収める
         while result_line:
 
             if "standard" in result_line:
@@ -628,6 +632,21 @@ class Application(tk.Frame):
             # 輝度値の取得
             value = self.pil_image.getpixel((x, y))
             self.image_position["text"] = f"image({x: 4d}, {y: 4d}) = {value}"
+
+            if self.split_info == True:
+                
+                split_num_list = []
+                for s,sd in enumerate(self.split_info_list):
+                    sx = int(sd[0])
+                    sy = int(sd[1])
+                    lsx = int(sd[2])
+                    lsy = int(sd[3])
+
+                    if (x>sx and x<=sx+lsx) and (y>sy and y<=sy+lsy):
+                        split_num_list.append(str(s+1))
+                
+                self.split_position["text"] = ",".join(split_num_list)
+
         else:
             self.image_position["text"] = "-------------------------"
 
@@ -1182,6 +1201,9 @@ class Application(tk.Frame):
             split_data,standards = insp_test.get_split_data()
         else:
             split_data = insp_test.get_split_data()
+
+        self.split_info_list = split_data.copy()
+        self.split_info = True 
 
         split_num = len(split_data)
 
