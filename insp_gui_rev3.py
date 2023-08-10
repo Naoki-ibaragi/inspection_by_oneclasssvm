@@ -14,8 +14,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg,NavigationToolbar2Tk
 import subprocess
 
-VERSION_INFO = "3.1"
-DATE_INFO = "2023/7/5"
+VERSION_INFO = "3.2"
+DATE_INFO = "2023/8/10"
 
 class Application(tk.Frame):
     def __init__(self, master=None):
@@ -59,20 +59,6 @@ class Application(tk.Frame):
     # -------------------------------------------------------------------------------
     # メニューイベント
     # -------------------------------------------------------------------------------
-    def menu_open_clicked(self, event=None):
-        # File → Open
-        filename = tk.filedialog.askopenfilename(
-            filetypes = [("Image file", ".bmp .png .jpg .tif"), ("Bitmap", ".bmp"), ("PNG", ".png"), ("JPEG", ".jpg"), ("Tiff", ".tif") ], # ファイルフィルタ
-            initialdir = os.getcwd() # カレントディレクトリ
-            )
-
-        # 画像ファイルを設定する
-        self.set_image(filename)
-
-    def menu_reload_clicked(self, event=None):
-        # File → ReLoad
-        self.set_image(self.filename)
-
     def menu_quit_clicked(self):
         # ウィンドウを閉じる
         self.master.destroy() 
@@ -90,7 +76,7 @@ class Application(tk.Frame):
         self.set_setting()
 
     def menu_version_clicked(self, event=None):
-        # フォルダ設定を開く
+        # バージョン情報を確認
         self.open_version()
 
     # -------------------------------------------------------------------------------
@@ -102,16 +88,12 @@ class Application(tk.Frame):
         self.file_menu = tk.Menu(self.menu_bar, tearoff = tk.OFF)
         self.menu_bar.add_cascade(label="File", menu=self.file_menu)
 
-        self.file_menu.add_command(label="Open", command = self.menu_open_clicked, accelerator="Ctrl+O")
-        self.file_menu.add_command(label="ReLoad", command = self.menu_reload_clicked, accelerator="Ctrl+R")
         self.file_menu.add_command(label="Save image", command = self.menu_save_clicked, accelerator="Ctrl+S")
         self.file_menu.add_separator() # セパレーターを追加
         self.file_menu.add_command(label="Open Resultfolder", command = self.menu_open_resultfolder_clicked)
         self.file_menu.add_separator() # セパレーターを追加
         self.file_menu.add_command(label="Exit", command = self.menu_quit_clicked)
 
-        self.menu_bar.bind_all("<Control-o>", self.menu_open_clicked) # ファイルを開くのショートカット(Ctrol-Oボタン)
-        self.menu_bar.bind_all("<Control-r>", self.menu_reload_clicked) # ファイルを開くのショートカット(Ctrol-Rボタン)
         self.menu_bar.bind_all("<Control-s>", self.menu_save_clicked) # ファイルを開くのショートカット(Ctrol-Sボタン)
 
         self.setting_menu = tk.Menu(self.menu_bar, tearoff = tk.OFF)
@@ -295,9 +277,6 @@ class Application(tk.Frame):
         self.canvas.bind("<Button-1>", self.mouse_down_left)                # MouseDown（左ボタン）
         self.canvas.bind("<Double-Button-1>", self.mouse_double_click_left) # MouseDoubleClick（左ボタン）
         self.canvas.bind("<MouseWheel>", self.mouse_wheel)                  # MouseWheel
-        self.canvas.bind("<Button-3>", self.mouse_down_right)               # MouseDown (右ボタン)
-        self.canvas.bind("<ButtonRelease-1>", self.left_click_release)      # 左クリックを離す
-        self.rectangle=None
 
     def set_setting(self):
         """モーダルダイアログボックスを開く"""
@@ -595,6 +574,8 @@ class Application(tk.Frame):
             id_tmp=self.graph_tree.insert("","end",values=(num,std,med_value,min_value,max_value))
             self.graph_id_list[id_tmp]=[num,std,med_value,min_value,max_value]
 
+        messagebox.showinfo("確認","読込完了!")
+
         return
 
     #画像保存
@@ -661,23 +642,7 @@ class Application(tk.Frame):
 
     def mouse_down_left(self, event):
         ''' マウスの左ボタンを押した '''
-        if event.state & 0x1:
-
-            # 画像座標
-            mouse_posi = np.array([event.x, event.y, 1]) # マウス座標(numpyのベクトル)
-            mat_inv = np.linalg.inv(self.mat_affine)     # 逆行列（画像→Cancasの変換からCanvas→画像の変換へ）
-            self.image_posi = np.dot(mat_inv, mouse_posi)     # 座標のアフィン変換
-            x = int(np.floor(self.image_posi[0]))
-            y = int(np.floor(self.image_posi[1]))
-            if x >= 0 and x < self.pil_image.width and y >= 0 and y < self.pil_image.height:
-                # 輝度値の取得
-                #self.rx1 = x
-                #self.ry1 = y
-                self.rx1 = 10*(x//10)
-                self.ry1 = 10*(y//10)
-                self.rectangle = 1
-        else:
-            self.__old_event = event
+        self.__old_event = event
 
     def mouse_double_click_left(self, event):
         ''' マウスの左ボタンをダブルクリック '''
@@ -699,47 +664,6 @@ class Application(tk.Frame):
             self.scale_at(1.25, event.x, event.y)
         
         self.redraw_image() # 再描画
-
-    def left_click_release(self,event):
-        ''' マウスの左クリックをリリース '''
-        if self.pil_image is None:
-            return
-        if self.rectangle:
-            self.rectangle=None
-
-            # 画像座標
-            #矩形描画
-            if self.rectangle_mode == 0:
-                cv2.rectangle(self.cv_image,(self.rx1,self.ry1),(self.rx1+20,self.ry1+80),(0,0,200),1)
-                item = self.tree.insert("","end",values=(len(self.id_list),self.rx1,self.ry1,20,80))
-                self.id_list[item]=[len(self.id_list),self.rx1,self.ry1,20,80]
-                self.new_data.set("")
-            elif self.rectangle_mode == 1:
-                cv2.rectangle(self.cv_image,(self.rx1,self.ry1),(self.rx1+80,self.ry1+20),(0,0,200),1)
-                item = self.tree.insert("","end",values=(len(self.id_list),self.rx1,self.ry1,80,20))
-                self.id_list[item]=[len(self.id_list),self.rx1,self.ry1,80,20]
-                self.new_data.set("")
-            elif self.rectangle_mode == 2:
-                cv2.rectangle(self.cv_image,(self.rx1,self.ry1),(self.rx1+40,self.ry1+40),(0,0,200),1)
-                item = self.tree.insert("","end",values=(len(self.id_list),self.rx1,self.ry1,40,40))
-                self.id_list[item]=[len(self.id_list),self.rx1,self.ry1,40,40]
-                self.new_data.set("")
-            elif self.rectangle_mode == 3:
-                cv2.rectangle(self.cv_image,(self.rx1,self.ry1),(self.rx1+20,self.ry1+40),(0,0,200),1)
-                item = self.tree.insert("","end",values=(len(self.id_list),self.rx1,self.ry1,20,40))
-                self.id_list[item]=[len(self.id_list),self.rx1,self.ry1,20,40]
-                self.new_data.set("")
-            elif self.rectangle_mode == 4:
-                cv2.rectangle(self.cv_image,(self.rx1,self.ry1),(self.rx1+40,self.ry1+20),(0,0,200),1)
-                item = self.tree.insert("","end",values=(len(self.id_list),self.rx1,self.ry1,40,20))
-                self.id_list[item]=[len(self.id_list),self.rx1,self.ry1,40,20]
-                self.new_data.set("")
-
-            self.redraw_image() # 再描画
-
-    def mouse_down_right(self,event):
-        ''' マウスの右ボタンをクリック '''
-        return 0
 
     # -------------------------------------------------------------------------------
     # 画像表示用アフィン変換
@@ -828,8 +752,6 @@ class Application(tk.Frame):
         self.canvas.bind("<Button-1>", self.mouse_down_left)                # MouseDown（左ボタン）
         self.canvas.bind("<Double-Button-1>", self.mouse_double_click_left) # MouseDoubleClick（左ボタン）
         self.canvas.bind("<MouseWheel>", self.mouse_wheel)                  # MouseWheel
-        self.canvas.bind("<Button-3>", self.mouse_down_right)               # MouseDown (右ボタン)
-        self.canvas.bind("<ButtonRelease-1>", self.left_click_release)      # 左クリックを離す
         #############
         
         #self.canvas.create_line(20,10,280,190,fill="Blue",width=5)
@@ -882,7 +804,7 @@ class Application(tk.Frame):
         ''' 画像の再描画 '''
         if self.cv_image is None:
             return
-        self.remake_canvas()
+        #self.remake_canvas()
         self.draw_image(self.cv_image)
 
     def type_radio_click(self):
@@ -1102,13 +1024,17 @@ class Application(tk.Frame):
         
     def on_tree_select(self,event):
         """tab2のグラフを選択したときの処理""" 
+
+        #再canvasの再表示
+        #self.remake_canvas()
+
         for item in self.tree.selection():
             item_text = self.tree.item(item,"values")
 
         img_name = item_text[1] + ".jpg"
 
         if item_text[2] == "p":
-            img_address = self.now_result_folder + "good_image/"+img_name
+            img_address = self.now_result_folder + "all_image/"+img_name
             self.set_image(img_address)
         elif item_text[2] == "f":
             img_address = self.now_result_folder + "fail_image/"+img_name
@@ -1362,6 +1288,7 @@ class Application(tk.Frame):
 
         #ONE_TEST_SIZE区切りの2次元配列に変換
         test_images=[]
+        test_image_name=[] #画像の名前を入れるリスト
         for i,image_file in enumerate(test_image_files):
 
             if (i+1)%insp_test.ONE_TEST_SIZE==0:
@@ -1388,8 +1315,8 @@ class Application(tk.Frame):
         if not os.path.exists(insp_test.OUTPUT_FAIL_IMAGE):
             os.makedirs(insp_test.OUTPUT_FAIL_IMAGE)
 
-        if not os.path.exists(insp_test.OUTPUT_GOOD_IMAGE):
-            os.makedirs(insp_test.OUTPUT_GOOD_IMAGE)
+        #if not os.path.exists(insp_test.OUTPUT_GOOD_IMAGE):
+        #    os.makedirs(insp_test.OUTPUT_GOOD_IMAGE)
 
         for i,images in enumerate(test_images):
 
@@ -1402,6 +1329,7 @@ class Application(tk.Frame):
                 #画像をopencvで読み込み、リストに入れる
                 img_test = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
                 test_image_list.append(img_test)
+                test_image_name.append(image.split("\\")[-1].split(".")[0])
                 img_name_list.append(image)
             
             for j,image in enumerate(test_image_list):
@@ -1421,11 +1349,12 @@ class Application(tk.Frame):
         print("\n画像評価完了")
         print("判定中")
 
+        #PATモードの場合
         if self.process_mode == 3 and insp_test.STD_TYPE != "FIX":
             standards = insp_test.set_standards(predictions)
 
         #良品不良品判定
-        judge_results = insp_test.judge_pass_fail(standards,predictions,split_data,test_num)
+        judge_results = insp_test.judge_pass_fail(standards,predictions,split_data,test_num,test_image_name)
 
         #result出力用に転置する
         output_predictions = np.array(predictions).T
@@ -1458,10 +1387,10 @@ class Application(tk.Frame):
         for j,result in enumerate(judge_results): #j 画像数
 
             if "1" in result:
-                output_line = str(j+1)+","+"f"+","+str(insp_test.theta_list[j][0])+","+str(insp_test.theta_list[j][1])+","+str(insp_test.theta_list[j][2])+","+str(insp_test.theta_list[j][3])+","+str(insp_test.theta_list[j][4])+","
+                output_line = test_image_name[j]+","+"f"+","+str(insp_test.theta_list[j][0])+","+str(insp_test.theta_list[j][1])+","+str(insp_test.theta_list[j][2])+","+str(insp_test.theta_list[j][3])+","+str(insp_test.theta_list[j][4])+","
                 fail_num += 1
             else:
-                output_line = str(j+1)+","+"p"+","+str(insp_test.theta_list[j][0])+","+str(insp_test.theta_list[j][1])+","+str(insp_test.theta_list[j][2])+","+str(insp_test.theta_list[j][3])+","+str(insp_test.theta_list[j][4])+","
+                output_line = test_image_name[j]+","+"p"+","+str(insp_test.theta_list[j][0])+","+str(insp_test.theta_list[j][1])+","+str(insp_test.theta_list[j][2])+","+str(insp_test.theta_list[j][3])+","+str(insp_test.theta_list[j][4])+","
                 pass_num += 1
 
             for r in result:
@@ -1478,7 +1407,7 @@ class Application(tk.Frame):
         print("良品数は{}、不良品数は{}".format(pass_num,fail_num))
         print("正常終了")
 
-        messagebox.showinfo("確認","処理が正常に終了しました")
+        messagebox.showinfo("確認","処理が正常に終了しました\n良品数は{}、不良品数は{}".format(pass_num,fail_num))
 
         self.result_analysis(type_name,lot_no)
 

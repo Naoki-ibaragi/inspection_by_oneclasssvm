@@ -2,7 +2,6 @@
 """rev1 23/06/25 作成"""
 """rev2 23/07/05 作成 template matchingをtmpとtestで逆転"""
 """rev3 23/07/08 作成 スプリットデータで区切る前にフィルターをかける"""
-
 import os
 import sys
 import numpy as np
@@ -35,6 +34,7 @@ class insp:
         self.NU = 0.001
         self.GAMMA = 0.001
         self.STD_COEFF = 6
+        self.EX_COEFF = 20
         self.STD_TYPE = "FIX"
         self.BRIGHTNESS_MATCH = 1 #良品画像と輝度を合わせる
         self.BILATERAL_SIZE = 9 #bilateral filterの程度
@@ -46,6 +46,7 @@ class insp:
         self.sigmoid_std = 128.0 #sigmoidフィルタの中心点
         self.theta_list=[]
         self.FILTER_LIST=[]
+        self.ex_split_point=[]
 
         self.GOOD_SAMPLE_FOLDER="C:/workspace/insp_by_oneclasssvm_ver2/good_sample/" #良品画像が入ったフォルダ
         self.PARENT_IMG_FILE="C:/workspace/insp_by_oneclasssvm_ver2/00000AA.JPG" #良品画像が入ったフォルダ
@@ -87,6 +88,7 @@ class insp:
         self.OUTPUT_FAIL_IMAGE = result_folder + "fail_image/"
         self.OUTPUT_GOOD_IMAGE = result_folder + "good_image/"
         self.SPLIT_DATA_FILE = parameter_folder + "split_data.csv"
+        self.EX_SPLIT_DATA_FILE = parameter_folder + "ex_split_data.csv"
         self.PICKLE_MODEL_FILE = parameter_folder + "model.pickle"
         self.PICKLE_SCORE_FILE = parameter_folder + "score.pickle"
 
@@ -125,6 +127,8 @@ class insp:
                 self.GAMMA = float(setting_item[1])
             elif setting_item[0] == "STD_COEFF":
                 self.STD_COEFF = float(setting_item[1])
+            elif setting_item[0] == "EX_COEFF":
+                self.EX_COEFF = float(setting_item[1])
             elif setting_item[0] == "STD_TYPE":
                 self.STD_TYPE = setting_item[1].replace("\n","")
             elif setting_item[0] == "BRIGHTNESS_MATCH":
@@ -531,7 +535,7 @@ class insp:
         if mode==0:
             #テスト時
             self.theta_list.append([theta,x,y,w,h])
-            img_name = self.OUTPUT_ALL_IMAGE+str(n)+".jpg"
+            img_name = self.OUTPUT_ALL_IMAGE+img_path.split("\\")[-1].split(".")[0]+".jpg"
             cv2.imwrite(img_name,img)
             print("\r{}枚目 {}を処理中".format(n,img_path),end="")
         elif mode==1:
@@ -641,16 +645,23 @@ class insp:
 
         standards = []
 
-        for score in test_scores:
+        print("ex_coeffを適用するポイント数:{}".format(len(self.ex_split_point)))
+
+        for i,score in enumerate(test_scores):
             med = np.median(score) #良品学習スコアの内最小値を規格に置く
             std = np.std(score)
-            standard = med-self.STD_COEFF*std
-            #standard = med-0.04
+
+            #ex_coeffを適用するかどうか
+            if i in self.ex_split_point:
+                standard = med-self.EX_COEFF*std
+            else:
+                standard = med-self.STD_COEFF*std
+
             standards.append(standard)
 
         return standards
 
-    def judge_pass_fail(self,standards,test_predictions,split_data,test_num):
+    def judge_pass_fail(self,standards,test_predictions,split_data,test_num,test_image_name):
 
         #predictionsはsplit_num X テストサンプル数
 
@@ -666,7 +677,7 @@ class insp:
         #不良個所に矩形を書く
         for i,result in enumerate(judge_result):
             if "1" in result:
-                fail_img = cv2.imread(self.OUTPUT_ALL_IMAGE+str(i+1)+".jpg",cv2.COLOR_GRAY2RGB)
+                fail_img = cv2.imread(self.OUTPUT_ALL_IMAGE+test_image_name[i]+".jpg",cv2.COLOR_GRAY2RGB)
                 for j,r in enumerate(result):
                     if r=="1":
                         x1 = split_data[j][0] #矩形左上のx座標
@@ -675,22 +686,23 @@ class insp:
                         y2 = y1+split_data[j][3] #矩形右下のy座標
                         cv2.rectangle(fail_img,(x1,y1),(x2,y2),(0,200,0),1)
                         cv2.putText(fail_img,str(j+1),(x1,y1),cv2.FONT_HERSHEY_PLAIN,1.5,(0,200,0),1,cv2.LINE_AA)
-                cv2.imwrite(self.OUTPUT_FAIL_IMAGE+str(i+1)+".jpg",fail_img)
-            else:
-                good_img = cv2.imread(self.OUTPUT_ALL_IMAGE+str(i+1)+".jpg",cv2.COLOR_GRAY2RGB)
-                cv2.imwrite(self.OUTPUT_GOOD_IMAGE+str(i+1)+".jpg",good_img)
+                cv2.imwrite(self.OUTPUT_FAIL_IMAGE+test_image_name[i]+".jpg",fail_img)
+            #else:
+                #good_img = cv2.imread(self.OUTPUT_ALL_IMAGE+str(i+1)+".jpg",cv2.COLOR_GRAY2RGB)
+                #cv2.imwrite(self.OUTPUT_GOOD_IMAGE+str(i+1)+".jpg",good_img)
 
         return judge_result
 
+    #スプリットデータ読み込み
     def get_split_data(self):
 
         split_data=[]
+        ex_split_data=[]
         std_lower=[]
 
+        #split_data読込
         split_data_file = open(self.SPLIT_DATA_FILE,"r")
-
         split_data_line = split_data_file.readline()
-
         while split_data_line:
             d = split_data_line.replace("\n","").split(",")
             split_data.append([int(d[0]),int(d[1]),int(d[2]),int(d[3])])
@@ -702,6 +714,26 @@ class insp:
 
         split_data_file.close()
 
+        #ex_split_dataがあれば読込
+        if os.path.exists(self.EX_SPLIT_DATA_FILE):
+            ex_split_data_file = open(self.EX_SPLIT_DATA_FILE,"r")
+            ex_split_data_line = ex_split_data_file.readline()
+
+            while ex_split_data_line:
+                d = ex_split_data_line.replace("\n","").split(",")
+                ex_split_data.append([int(d[0]),int(d[1]),int(d[2]),int(d[3])])
+
+                ex_split_data_line = ex_split_data_file.readline()
+
+            ex_split_data_file.close()
+
+            #EX_COEFFを適用する分割を抽出->self.ex_split_pointに格納
+            for i,esd in enumerate(ex_split_data):
+                for j,sd in enumerate(split_data):
+
+                    if esd[0] == sd[0] and esd[1]==sd[1] and esd[2]==sd[2] and esd[3]==sd[3]:
+                        self.ex_split_point.append(j)
+
         if self.STD_TYPE=="FIX":
             return split_data,std_lower 
         else:
@@ -709,266 +741,4 @@ class insp:
 
 """メイン"""
 if __name__=="__main__":
-
-    insp_test = insp()
-    type_name = "ABCDEF"
-    lot_no = "test_lot"
-    process_type = "0"
-
-    #各辺のポイントを取得するための矩形情報読み込み
-    insp_test.read_setting_file(type_name,lot_no)
-
-    #分割情報を取得
-    split_data = insp_test.get_split_data()
-    split_num = len(split_data)
-
-    """
-    良品学習実施
-    """
-    #初めにお手本画像を作成する:
-    img_good_average = insp_test.get_parent_img(insp_test.PARENT_IMG_FILE)
-    #明るくする
-    img_good_average = insp_test.adjust(img_good_average,alpha=2.5,beta=0)
-    good_mean = np.mean(img_good_average)
-    good_std = np.std(img_good_average)
-
-    #プロセスタイプによって分岐
-    if process_type =="1" or process_type=="2":
-        #良品画像読み込み
-        print("良品画像読み込み中")
-        good_image_list = []
-
-        good_folder_list = os.listdir(insp_test.GOOD_SAMPLE_FOLDER)
-
-        for folder in good_folder_list:
-
-            images = glob.glob(insp_test.GOOD_SAMPLE_FOLDER+folder+"/*AA.JPG")
-
-            for image in images:
-                #img_good = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
-                good_image_list.append(image)
-
-        #ONE_TEST_SIZE区切りの2次元配列に変換
-        good_images=[]
-        for i,image_file in enumerate(good_image_list):
-
-            if (i+1)%insp_test.ONE_TEST_SIZE==0:
-                tmp.append(image_file)
-                good_images.append(tmp)
-                continue
-            
-            if i%insp_test.ONE_TEST_SIZE==0:
-                tmp=[]
-                tmp.append(image_file)
-                continue
-
-            tmp.append(image_file)
-
-        good_images.append(tmp) 
-
-        good_num = len(good_image_list)
-
-        print("良品画像数は{}枚です".format(good_num))
-
-        #for debug
-        #cv2.imwrite("./img_good_average.jpg",img_good_average)
-
-        #average画像の各分割のmean,stdを記録
-        mean_std = []
-        for i,s in enumerate(split_data):
-            x = s[0] #5~1495
-            y = s[1] #5
-            lx = s[2] #60
-            ly = s[3] #65
-
-            img_ave = img_good_average[y:y+ly,x:x+lx]
-            mean_std.append([np.mean(img_ave),np.std(img_ave)])
-     
-        #良品画像と平均画像の差分ベクトルを作成
-        print("良品の差分ベクトル作成中")
-        good_diff_image_list = [[] for s in range(split_num)]
-        for i,images in enumerate(good_images):
-
-            good_image_list = []
-
-            #opencvで読み込んだ画像をgood_image_listに入れる(ONE_TEST_SIZE分)
-            for j,image in enumerate(images):
-                img_good = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
-                good_image_list.append(img_good)
-
-            #差分ベクトルをgood_diff_image_listに入れていく(good_diff_image_listはsplit_numのおおきさ)
-            for j,image in enumerate(good_image_list):
-                diff_image_list = insp_test.get_diff_image_list(img_good_average,image,split_data,i*insp_test.ONE_TEST_SIZE+j+1,1)
-
-                for s in range(split_num):
-                    good_diff_image_list[s].append(diff_image_list[s])
-
-           #メモリ開放
-            del good_image_list
-
-        #one-class-svmで良品学習
-        print("良品学習中")
-        models = insp_test.learn_good_feature(good_diff_image_list,split_num)
-
-        #スコア判定規格設定
-        print("スコア判定規格設定中")
-        good_scores = insp_test.good_predict(models,good_diff_image_list,split_num)
-
-        del good_diff_image_list
-
-        #良品のスコア出力
-        output_file = open(insp_test.GOOD_RESULT_FILE,"w")
-        output_line = ""
-        for i in range(good_num):
-            output_line += str(i+1)+","
-        output_line += "\n"
-
-        output_file.write(output_line)
-
-        #結果出力
-        for scores in good_scores:
-            output_line = ""
-            for p in scores:
-                output_line += str(p) +","
-            output_line += "\n"
-            output_file.write(output_line)
-
-        output_file.close()
-
-    elif process_type=="0":
-        #pickleファイルを読み込んで良品学習をスキップ
-        print("モデルpickleファイルを読み込み")
-        models = insp_test.load_model_pickle()
-        print("スコアpickleファイルを読み込み")
-        good_scores = insp_test.load_score_pickle()
-
-    if process_type == "2":
-        print("良品学習完了")
-        print("正常終了")
-        sys.exit()
-
-    #規格設定
-    standards = insp_test.set_standards(good_scores)
-
-    del good_scores
-
-    """
-    ここからテスト開始
-    memory error回避のため100枚ずつテスト
-    
-    """
-    #テストデータ読み込み
-    print("テスト実施中")
-    test_image_files = glob.glob(insp_test.TEST_SAMPLE_FOLDER+"*AA.JPG")
-    test_num = len(test_image_files)
-    print("テスト画像数は{}枚です".format(test_num))
-
-    #ONE_TEST_SIZE区切りの2次元配列に変換
-    test_images=[]
-    for i,image_file in enumerate(test_image_files):
-
-        if (i+1)%insp_test.ONE_TEST_SIZE==0:
-            tmp.append(image_file)
-            test_images.append(tmp)
-            continue
-        
-        if i%insp_test.ONE_TEST_SIZE==0:
-            tmp=[]
-            tmp.append(image_file)
-            continue
-
-        tmp.append(image_file)
-
-    test_images.append(tmp) 
-
-    #テストメインループ
-    predictions = [[] for i in range(split_num)]
-
-    #テスト画像のaffine変換後の画像保存
-    if not os.path.exists(insp_test.OUTPUT_ALL_IMAGE):
-        os.makedirs(insp_test.OUTPUT_ALL_IMAGE)
-
-    if not os.path.exists(insp_test.OUTPUT_FAIL_IMAGE):
-        os.makedirs(insp_test.OUTPUT_FAIL_IMAGE)
-
-    if not os.path.exists(insp_test.OUTPUT_GOOD_IMAGE):
-        os.makedirs(insp_test.OUTPUT_GOOD_IMAGE)
-
-    for i,images in enumerate(test_images):
-
-        test_image_list=[] #opencvで開いた画像を入れる
-        test_diff_image_list=[] #差分ベクトルを入れる
-           
-        for j,image in enumerate(images): #imagesはONE_TEST_SIZE枚画像が入っている
-
-            #画像をopencvで読み込み、リストに入れる
-            img_test = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
-            test_image_list.append(img_test)
-        
-        for j,image in enumerate(test_image_list):
-
-            diff_image_list = insp_test.get_diff_image_list(img_good_average,image,split_data,i*insp_test.ONE_TEST_SIZE+j+1,0)
-            
-            test_diff_image_list.append(diff_image_list) #ONE_TEST_SIZE枚分の差分ベクトル
-
-        #テストデータをつかってone-class-svmのスコア取得
-        results = insp_test.result_predict(models,test_diff_image_list,split_num)
-
-        for s in range(split_num):
-            predictions[s] += results[s]
-
-        #リスト初期化、メモリ開放
-        del test_image_list
-        del test_diff_image_list
-
-    print("\n画像評価完了")
-    print("判定中")
-
-    #良品不良品判定
-    judge_results = insp_test.judge_pass_fail(standards,predictions,split_data,test_num)
-
-    #result出力用に転置する
-    output_predictions = np.array(predictions).T
-
-    #結果出力csvファイル
-    output_file = open(insp_test.OUTPUT_RESULT_FILE,"w")
-    #header出力
-
-    output_file.write("\n")
-    output_line = "no,p/f,theta,x,y,w,h,"
-    for i in range(split_num):
-        output_line += str(i+1)+","
-
-    for i in range(split_num):
-        output_line += str(i+1)+","
-
-    output_line += "\n"
-    output_file.write(output_line)
-
-    #メイン結果出力
-    fail_num = 0
-    pass_num = 0
-    for j,result in enumerate(judge_results): #j 画像数
-
-        if "1" in result:
-            output_line = str(j+1)+","+"f"+","+str(insp_test.theta_list[j][0])+","
-            fail_num += 1
-        else:
-            output_line = str(j+1)+","+"p"+","+str(insp_test.theta_list[j])+","
-            pass_num += 1
-
-        for r in result:
-            output_line += str(r) +","
-    
-        #score出力
-        for p in output_predictions[j]:
-            output_line+=str(p)+","
-        
-        output_line += "\n"
-        output_file.write(output_line)
-
-
-    output_file.close()
-    print("良品数は{}、不良品数は{}".format(pass_num,fail_num))
-    print("正常終了")
-
+    print("no use main")
