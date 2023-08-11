@@ -223,6 +223,9 @@ class Application(tk.Frame):
         btn_view_all = tk.Button(self.tab2, text = "全て表示", width = 30, command = self.click_view_all)
         btn_view_all.place(x=x_set,y=y_set+height+90,height=30)
 
+        btn_clip_copy = tk.Button(self.tab2, text = "選択した項目をクリップボードにコピー", width = 30, command = self.click_clip_copy)
+        btn_clip_copy.place(x=x_set,y=y_set+height+160,height=30)
+
         #----------------------------
         #tab3 解析のwidget
         #----------------------------
@@ -1107,6 +1110,21 @@ class Application(tk.Frame):
 
         self.now_id_list = self.id_list
         return 
+    
+    def click_clip_copy(self):
+        """クリップボードに選択した項目をコピー"""
+
+        selected_items = self.tree.selection()
+        print(selected_items)
+        #クリップボードにコピーする文字列を取得
+        input_line = ""
+        for item in selected_items:
+            input_line += self.now_id_list[item][1]+"\n"
+
+        #クリップボードにコピー
+        subprocess.run("clip",input=input_line,text=True)
+
+        return
 
     #---------------------------#
     #メイン処理                 #
