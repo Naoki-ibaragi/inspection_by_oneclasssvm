@@ -79,6 +79,13 @@ class Application(tk.Frame):
         # バージョン情報を確認
         self.open_version()
 
+    def menu_open_makerecipe(self, event=None):
+        # 別ソフトを起動
+        self.open_makerecipe()
+
+    def menu_version_coeffsetting(self, event=None):
+        # 別ソフトを起動:
+        self.open_coeffsetting()
     # -------------------------------------------------------------------------------
 
     # create_menuメソッドを定義
@@ -99,6 +106,11 @@ class Application(tk.Frame):
         self.setting_menu = tk.Menu(self.menu_bar, tearoff = tk.OFF)
         self.menu_bar.add_cascade(label="Setting", menu=self.setting_menu)
         self.setting_menu.add_command(label="アドレス設定", command = self.menu_setting_clicked)
+
+        self.version_menu = tk.Menu(self.menu_bar, tearoff = tk.OFF)
+        self.menu_bar.add_cascade(label="ソフト", menu=self.version_menu)
+        self.version_menu.add_command(label="MakeRecipe", command = self.menu_open_makerecipe)
+        self.version_menu.add_command(label="CoeffSeting", command = self.menu_open_coeffsetting)
 
         self.version_menu = tk.Menu(self.menu_bar, tearoff = tk.OFF)
         self.menu_bar.add_cascade(label="Version", menu=self.version_menu)
@@ -441,6 +453,20 @@ class Application(tk.Frame):
 
         self.original_cv_image = self.cv_image.copy()
         self.original_cv_image = cv2.cvtColor(self.original_cv_image,cv2.COLOR_GRAY2RGB)
+
+    #レシピ設定用プログラムを開く
+    def menu_open_makerecipe(self):
+        """別プログラム起動"""
+        command = ["py", "c:\\workspace\\git_local\\make_recipe_program\\MakeRecipe.py"]
+        subprocess.Popen(command)
+        return
+
+    #Coeff設定用プログラムを開く
+    def menu_open_coeffsetting(self):
+        """別プログラム起動"""
+        command = ["py", "c:\\workspace\\git_local\\make_recipe_program\\CoeffSetting.py"]
+        subprocess.Popen(command)
+        return
 
     #version情報を開く
     def open_version(self):
@@ -1129,11 +1155,31 @@ class Application(tk.Frame):
     #---------------------------#
     #メイン処理                 #
     #---------------------------#
+
     def start_main_process(self):
-        '''メイン処理'''
+
         lot_no = self.LotName.get()
         type_name = self.TypeName.get()
 
+        lot_no_num = len(lot_no.split(","))
+        type_name_num = len(type_name.split(","))
+
+        if lot_no_num != type_name_num:
+            print("機種名とロットNoの数があっていません")
+            return
+
+        if lot_no_num == 1:
+            self.main_process(lot_no,type_name,1)
+        elif lot_no_num > 1:
+            lot_no_list = lot_no.split(",")
+            type_name_list = type_name.split(",")
+            for i,lot in enumerate(lot_no_list):
+                self.main_process(lot,type_name_list[i],2)
+
+        return
+
+    def main_process(self,lot_no,type_name,test_mode):
+        '''メイン処理'''
         #insp_moduleのinspクラス
         insp_test = insp()
 
@@ -1425,9 +1471,10 @@ class Application(tk.Frame):
         print("良品数は{}、不良品数は{}".format(pass_num,fail_num))
         print("正常終了")
 
-        messagebox.showinfo("確認","処理が正常に終了しました\n良品数は{}、不良品数は{}".format(pass_num,fail_num))
-
-        self.result_analysis(type_name,lot_no)
+        if test_mode == 1:
+            #処理ロットが1つであればポップアップ表示と解析用の処理をする
+            messagebox.showinfo("確認","処理が正常に終了しました\n良品数は{}、不良品数は{}".format(pass_num,fail_num))
+            self.result_analysis(type_name,lot_no)
 
         return
 
