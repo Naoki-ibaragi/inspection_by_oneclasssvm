@@ -14,8 +14,10 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg,NavigationToolbar2Tk
 import subprocess
 
-VERSION_INFO = "3.2"
-DATE_INFO = "2023/8/10"
+"""VERSION 4.1"""
+"""複数条件の処理に対応可能なように変更"""
+VERSION_INFO = "4.1"
+DATE_INFO = "2023/8/15"
 
 class Application(tk.Frame):
     def __init__(self, master=None):
@@ -452,7 +454,8 @@ class Application(tk.Frame):
         os.chdir(os.path.dirname(filename))
 
         self.original_cv_image = self.cv_image.copy()
-        self.original_cv_image = cv2.cvtColor(self.original_cv_image,cv2.COLOR_GRAY2RGB)
+        if self.original_cv_image.ndim == 1:
+            self.original_cv_image = cv2.cvtColor(self.original_cv_image,cv2.COLOR_GRAY2RGB)
 
     #レシピ設定用プログラムを開く
     def menu_open_makerecipe(self):
@@ -549,19 +552,14 @@ class Application(tk.Frame):
         """tab3 データtreeの更新"""
         """"""""""""""""""""""""""
         self.graph_standards=[]
-
+        self.filter_split=[]
         result_file = open(result_file_address,"r")
-
         result_line = result_file.readline()
-
         flag = 0
         #resultファイルを読み込んで、規格とスコアをリストに収める
         while result_line:
-
             if "standard" in result_line:
-                
                 items = result_line.split(",")
-
                 for item in items:
                     if self.is_num(item):
                         self.graph_standards.append(float(item))
@@ -571,8 +569,13 @@ class Application(tk.Frame):
             
             if "no" in result_line:
                 flag = 1
+                items = result_line.replace("\n","").split(",")
+                for n,item in enumerate(items):
+                    if n>6: #n==5がh
+                        self.filter_split.append(item)
+
                 result_line = result_file.readline()
-        
+ 
             if flag==1:
                 #reverseさせる
                 items = result_line.split(",")[:-1]
@@ -583,7 +586,6 @@ class Application(tk.Frame):
             result_line = result_file.readline()
 
         result_file.close()
-
         self.score_list = np.array(self.score_list)
 
         #表にデータを追加
@@ -594,7 +596,7 @@ class Application(tk.Frame):
         self.graph_id_list = dict()
 
         for i in range(split_data_num):
-            num = i+1
+            num = self.filter_split[i]
             std = self.graph_standards[i]
             med_value = np.median(self.score_list[i])
             max_value = np.amax(self.score_list[i])
@@ -646,17 +648,16 @@ class Application(tk.Frame):
             if self.split_info == True:
                 
                 split_num_list = []
-                for s,sd in enumerate(self.split_info_list):
-                    sx = int(sd[0])
-                    sy = int(sd[1])
-                    lsx = int(sd[2])
-                    lsy = int(sd[3])
+                for s1,sd_per_filter in enumerate(self.split_info_list):
+                    for s2,sd in enumerate(sd_per_filter):
+                        sx = int(sd[0])
+                        sy = int(sd[1])
+                        lsx = int(sd[2])
+                        lsy = int(sd[3])
 
-                    if (x>sx and x<=sx+lsx) and (y>sy and y<=sy+lsy):
-                        split_num_list.append(str(s+1))
-                
+                        if (x>sx and x<=sx+lsx) and (y>sy and y<=sy+lsy):
+                            split_num_list.append(str(s1+1)+"_"+str(s2+1))
                 self.split_position["text"] = ",".join(split_num_list)
-
         else:
             self.image_position["text"] = "-------------------------"
 
@@ -886,28 +887,27 @@ class Application(tk.Frame):
         """tab3 データtreeの更新"""
         """"""""""""""""""""""""""
         self.graph_standards=[]
-
+        self.filter_split=[]
         result_file = open(result_file_address,"r")
-
         result_line = result_file.readline()
-
         flag = 0
         #resulファイルを読み込んで、規格とスコアをリストに収める
         while result_line:
-
             if "standard" in result_line:
-                
                 items = result_line.split(",")
-
                 for item in items:
                     if self.is_num(item):
                         self.graph_standards.append(float(item))
-                
                 split_data_num = len(self.graph_standards)
                 self.score_list=[[] for i in range(split_data_num)]
             
             if "no" in result_line:
                 flag = 1
+                items = result_line.replace("\n","").split(",")
+                for n,item in enumerate(items):
+                    if n>6: #n==5がh
+                        self.filter_split.append(item)
+
                 result_line = result_file.readline()
         
             if flag==1:
@@ -920,9 +920,7 @@ class Application(tk.Frame):
             result_line = result_file.readline()
 
         result_file.close()
-
         self.score_list = np.array(self.score_list)
-
         #表にデータを追加
         #現在の表の項目をすべて削除
         for key in self.graph_id_list:
@@ -931,7 +929,7 @@ class Application(tk.Frame):
         self.graph_id_list = dict()
 
         for i in range(split_data_num):
-            num = i+1
+            num = self.filter_split[i]
             std = self.graph_standards[i]
             med_value = np.median(self.score_list[i])
             max_value = np.amax(self.score_list[i])
@@ -955,7 +953,8 @@ class Application(tk.Frame):
         for item in self.graph_tree.selection():
             item_text = self.graph_tree.item(item,"values")
 
-        split_num = int(item_text[0])-1
+        '''item_textの何要素目かを出す必要がある 23/8/18'''
+        split_num = self.filter_split.index(item_text[0])
         std = float(item_text[1])
 
         y = self.score_list[split_num]
@@ -1139,7 +1138,6 @@ class Application(tk.Frame):
     
     def click_clip_copy(self):
         """クリップボードに選択した項目をコピー"""
-
         selected_items = self.tree.selection()
         print(selected_items)
         #クリップボードにコピーする文字列を取得
@@ -1157,7 +1155,7 @@ class Application(tk.Frame):
     #---------------------------#
 
     def start_main_process(self):
-
+        """entryに複数ロット名を書き込んだ時に対応できるように変更 23/8/11"""
         lot_no = self.LotName.get()
         type_name = self.TypeName.get()
 
@@ -1183,36 +1181,40 @@ class Application(tk.Frame):
         #insp_moduleのinspクラス
         insp_test = insp()
 
-        #各辺のポイントを取得するための矩形情報読み込み
+        #setting.txtを読込
         insp_test.read_setting_file(type_name,lot_no,self.test_sample_address,self.parameter_address,self.output_result_address)
 
         #分割情報,規格情報を取得
         if insp_test.STD_TYPE == "FIX":
-            split_data,standards = insp_test.get_split_data()
+            """FIXの場合split_data.txtに書き込まれている規格を読み込み"""
+            standards = insp_test.get_split_data()
         else:
-            split_data = insp_test.get_split_data()
+            insp_test.get_split_data()
 
-        self.split_info_list = split_data.copy()
+        #検査後の解析時に使用するリストを残す
+        self.split_info_list = insp_test.SPLIT_DATA.copy()
         self.split_info = True 
 
-        split_num = len(split_data)
+        #各分割の分割数を出しておく
+        split_num=[]
+        for i in range(len(insp_test.SPLIT_DATA)):
+            split_num.append(len(insp_test.SPLIT_DATA[i]))
 
         """
         良品学習実施
         """
-        #初めにお手本画像を作成する:
+        #初めにお手本画像を作成する
         img_good_average = insp_test.get_parent_img(insp_test.PARENT_IMG_FILE)
 
         #お手本画像との輝度合わせ用にデータを取得
         mean_good = img_good_average.mean()
         std_good = img_good_average.std()
-
         brightness_data = [mean_good,std_good]
 
         #お手本にフィルターをかける
         img_good_average = insp_test.image_filter(img_good_average)
 
-        #プロセスタイプによって分岐
+        #プロセスタイプによって分岐 1->良品条件出し込みの全処理 2->良品条件出しのみ
         if self.process_mode ==1 or self.process_mode==2:
             #良品画像読み込み
             print("良品画像読み込み中")
@@ -1221,11 +1223,9 @@ class Application(tk.Frame):
             good_folder_list = os.listdir(insp_test.GOOD_SAMPLE_FOLDER)
 
             for folder in good_folder_list:
-
+                """good_image_listに良品フォルダ内の全画像アドレスを入れる"""
                 images = glob.glob(insp_test.GOOD_SAMPLE_FOLDER+folder+"/*AA.JPG")
-
                 for image in images:
-                    #img_good = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
                     good_image_list.append(image)
 
             #ONE_TEST_SIZE区切りの2次元配列に変換
@@ -1243,35 +1243,21 @@ class Application(tk.Frame):
                     continue
 
                 tmp.append(image_file)
-
             good_images.append(tmp) 
-
             good_num = len(good_image_list)
-
             print("良品画像数は{}枚です".format(good_num))
 
-            #for debug
-            #cv2.imwrite("./img_good_average.jpg",img_good_average)
-
-            #average画像の各分割のmean,stdを記録
-            mean_std = []
-            for i,s in enumerate(split_data):
-                x = s[0] #5~1495
-                y = s[1] #5
-                lx = s[2] #60
-                ly = s[3] #65
-
-                img_ave = img_good_average[y:y+ly,x:x+lx]
-                mean_std.append([np.mean(img_ave),np.std(img_ave)])
-         
             #良品画像と平均画像の差分ベクトルを作成
             print("良品の差分ベクトル作成中")
-            good_diff_image_list = [[] for s in range(split_num)]
-            for i,images in enumerate(good_images):
+            #good_diff_image_listを初期化
+            good_diff_image_list = []
+            for i in range(len(split_num)):
+                good_diff_image_list.append([[] for s in range(split_num[i])])
 
+            #画像読み込みから良品学習を開始
+            for i,images in enumerate(good_images):
                 good_image_list = []
                 img_name_list = []
-
                 #opencvで読み込んだ画像をgood_image_listに入れる(ONE_TEST_SIZE分)
                 for j,image in enumerate(images):
                     img_good = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
@@ -1280,41 +1266,41 @@ class Application(tk.Frame):
 
                 #差分ベクトルをgood_diff_image_listに入れていく(good_diff_image_listはsplit_numのおおきさ)
                 for j,image in enumerate(good_image_list):
-                    diff_image_list = insp_test.get_diff_image_list(img_good_average,image,split_data,brightness_data,i*insp_test.ONE_TEST_SIZE+j+1,1,img_name_list[j])
+                    diff_image_list = insp_test.get_diff_image_list(img_good_average,image,brightness_data,i*insp_test.ONE_TEST_SIZE+j+1,1,img_name_list[j])
+                    for k,s in enumerate(split_num):
+                        for l in range(s):
+                            good_diff_image_list[k][l].append(diff_image_list[k][l])
 
-                    for s in range(split_num):
-                        good_diff_image_list[s].append(diff_image_list[s])
+                    del diff_image_list
 
                #メモリ開放
                 del good_image_list
 
             #one-class-svmで良品学習
             print("良品学習中")
-            models = insp_test.learn_good_feature(good_diff_image_list,split_num)
+            models = insp_test.learn_good_feature(good_diff_image_list)
 
             #スコア判定規格設定
             print("\nスコア判定規格設定中")
-            good_scores = insp_test.good_predict(models,good_diff_image_list,split_num)
-
+            good_scores = insp_test.good_predict(models,good_diff_image_list)
             del good_diff_image_list
 
-            #良品のスコア出力
+            """良品スコアのcsvへの書き出し"""
             output_file = open(insp_test.GOOD_RESULT_FILE,"w")
-            output_line = ""
+            #header
+            output_line = "split,"
             for i in range(good_num):
                 output_line += str(i+1)+","
             output_line += "\n"
-
             output_file.write(output_line)
-
-            #結果出力
-            for scores in good_scores:
-                output_line = ""
-                for p in scores:
-                    output_line += str(p) +","
-                output_line += "\n"
-                output_file.write(output_line)
-
+            #本体結果出力
+            for i,scores_per_filter in enumerate(good_scores):
+                for j,scores in enumerate(scores_per_filter):
+                    output_line = str(i+1)+"_"+str(j+1)+","
+                    for p in scores:
+                        output_line += str(p) +","
+                    output_line += "\n"
+                    output_file.write(output_line)
             output_file.close()
 
         elif self.process_mode==0:
@@ -1329,6 +1315,7 @@ class Application(tk.Frame):
             models = insp_test.load_model_pickle()
 
         if self.process_mode == 2:
+            """良品学習のみの場合"""
             print("良品学習完了")
             print("正常終了")
             sys.exit()
@@ -1370,41 +1357,46 @@ class Application(tk.Frame):
         test_images.append(tmp) 
 
         #テストメインループ
-        predictions = [[] for i in range(split_num)]
+        #結果を入れるリストを複数フィルターに対応するように初期化
+        #predictionsを初期化
+        predictions=[]
+        for n in split_num:
+            predictions.append([[] for i in range(n)])
 
-        #テスト画像のaffine変換後の画像保存
+        #画像出力用フォルダ作成
         if not os.path.exists(insp_test.OUTPUT_ALL_IMAGE):
             os.makedirs(insp_test.OUTPUT_ALL_IMAGE)
-
         if not os.path.exists(insp_test.OUTPUT_FAIL_IMAGE):
             os.makedirs(insp_test.OUTPUT_FAIL_IMAGE)
 
-        #if not os.path.exists(insp_test.OUTPUT_GOOD_IMAGE):
-        #    os.makedirs(insp_test.OUTPUT_GOOD_IMAGE)
+        #test_diff_image_listを初期化
+        test_diff_image_list = []
+        for i in range(len(split_num)):
+            test_diff_image_list.append([[] for s in range(split_num[i])])
 
         for i,images in enumerate(test_images):
-
             test_image_list=[] #opencvで開いた画像を入れる
-            test_diff_image_list=[] #差分ベクトルを入れる
-            img_name_list = [] #画像の名前を入れる:
-
+            img_name_list = [] #画像の名前を入れる
             for j,image in enumerate(images): #imagesはONE_TEST_SIZE枚画像が入っている
-
                 #画像をopencvで読み込み、リストに入れる
                 img_test = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
                 test_image_list.append(img_test)
-                test_image_name.append(image.split("\\")[-1].split(".")[0])
-                img_name_list.append(image)
-            
+                test_image_name.append(image.split("\\")[-1].split(".")[0]) #result_data.csvに表示用
+                img_name_list.append(image) #terminalに表示用
             for j,image in enumerate(test_image_list):
-                diff_image_list = insp_test.get_diff_image_list(img_good_average,image,split_data,brightness_data,i*insp_test.ONE_TEST_SIZE+j+1,0,img_name_list[j])
-                test_diff_image_list.append(diff_image_list) #ONE_TEST_SIZE枚分の差分ベクトル
+                '''複数フィルターに対応できるように変更'''
+                diff_image_list = insp_test.get_diff_image_list(img_good_average,image,brightness_data,i*insp_test.ONE_TEST_SIZE+j+1,0,img_name_list[j])
+                for k,s in enumerate(split_num):
+                    for l in range(s):
+                        test_diff_image_list[k][l].append(diff_image_list[k][l]) #フィルターの数 X ONE_TEST_SIZE枚分の差分ベクトル
 
             #テストデータをつかってone-class-svmのスコア取得
             results = insp_test.result_predict(models,test_diff_image_list,split_num)
 
-            for s in range(split_num):
-                predictions[s] += results[s]
+            #predictionsに総テスト結果を入れていく
+            for k,s in enumerate(split_num): #フィルターの種類の数
+                for l in range(s): #分割の数
+                    predictions[k][l] += results[k][l]
 
             #リスト初期化、メモリ開放
             del test_image_list
@@ -1418,52 +1410,60 @@ class Application(tk.Frame):
             standards = insp_test.set_standards(predictions)
 
         #良品不良品判定
-        judge_results = insp_test.judge_pass_fail(standards,predictions,split_data,test_num,test_image_name)
+        judge_results = insp_test.judge_pass_fail(standards,predictions,test_num,test_image_name)
 
         #result出力用に転置する
-        output_predictions = np.array(predictions).T
+        #output_predictions = np.array(predictions).T
 
-        #結果出力csvファイル
+        '''結果出力'''
         output_file = open(insp_test.OUTPUT_RESULT_FILE,"w")
         #header出力
         output_line = "standards,,,,,,,"
-        for i in range(split_num):
-            output_line += ","
-        for i in range(split_num):
-            output_line += str(standards[i])+","
+        for i,s in enumerate(split_num):
+            for j in range(s):
+                output_line+=","
+        for i,s in enumerate(split_num):
+            for j in range(s):
+                output_line+=str(standards[i][j])+","
         output_line += "\n"
         output_file.write(output_line)
         output_file.write("\n")
-
         output_line = "no,p/f,theta,x,y,w,h,"
-        for i in range(split_num):
-            output_line += str(i+1)+","
-
-        for i in range(split_num):
-            output_line += str(i+1)+","
-
+        for i,s in enumerate(split_num):
+            for j in range(s):
+                output_line+=str(i+1)+"_"+str(j+1)+","
+        for i,s in enumerate(split_num):
+            for j in range(s):
+                output_line+=str(i+1)+"_"+str(j+1)+","
         output_line += "\n"
         output_file.write(output_line)
 
         #メイン結果出力
         fail_num = 0
         pass_num = 0
-        for j,result in enumerate(judge_results): #j 画像数
-
-            if "1" in result:
-                output_line = test_image_name[j]+","+"f"+","+str(insp_test.theta_list[j][0])+","+str(insp_test.theta_list[j][1])+","+str(insp_test.theta_list[j][2])+","+str(insp_test.theta_list[j][3])+","+str(insp_test.theta_list[j][4])+","
+        for i in range(test_num): #テスト数
+            flag=0
+            for j in range(len(split_num)): #分割数
+                if "1" in judge_results[j][i]:
+                    flag=1
+            if flag==1:    
+                output_line = test_image_name[i]+","+"f"+","+str(insp_test.theta_list[i][0])+","+str(insp_test.theta_list[i][1])+","+str(insp_test.theta_list[i][2])+","+str(insp_test.theta_list[i][3])+","+str(insp_test.theta_list[i][4])+","
                 fail_num += 1
             else:
-                output_line = test_image_name[j]+","+"p"+","+str(insp_test.theta_list[j][0])+","+str(insp_test.theta_list[j][1])+","+str(insp_test.theta_list[j][2])+","+str(insp_test.theta_list[j][3])+","+str(insp_test.theta_list[j][4])+","
+                output_line = test_image_name[i]+","+"p"+","+str(insp_test.theta_list[i][0])+","+str(insp_test.theta_list[i][1])+","+str(insp_test.theta_list[i][2])+","+str(insp_test.theta_list[i][3])+","+str(insp_test.theta_list[i][4])+","
                 pass_num += 1
 
-            for r in result:
-                output_line += str(r) +","
-        
+            #各矩形のp/f(0/1)出力
+            for j in range(len(split_num)): #分割数
+                for k in range(split_num[j]):
+                    output_line+=judge_results[j][i][k]+","
+
             #score出力
-            for p in output_predictions[j]:
-                output_line+=str(p)+","
-            
+            for j in range(len(split_num)):
+                output_predictions = np.array(predictions[j]).T
+                for p in output_predictions[i]:
+                    output_line+=str(p)+","
+                
             output_line += "\n"
             output_file.write(output_line)
 

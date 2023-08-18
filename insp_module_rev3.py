@@ -7,11 +7,10 @@ import sys
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-import glob
 from sklearn.linear_model import LinearRegression
 from sklearn import svm
 import pickle
-import gc
+import glob
 
 """定数"""
 class insp:
@@ -37,30 +36,23 @@ class insp:
         self.EX_COEFF = 20
         self.STD_TYPE = "FIX"
         self.BRIGHTNESS_MATCH = 1 #良品画像と輝度を合わせる
-        self.BILATERAL_SIZE = 9 #bilateral filterの程度
-        self.UNSHARP_SIZE = 1 #bilateral filterの程度
-        self.ADJUST_ALPHA = 2.5 #画像明るさ変更係数
-        self.ADJUST_BETA = 0.0 #画像明るさ変更切片
-        self.SOBEL_K = 3 #SOBELフィルタのパラメータ
-        self.sigmoid_coeff = 1.0 #sigmoidフィルタの係数
-        self.sigmoid_std = 128.0 #sigmoidフィルタの中心点
         self.theta_list=[]
         self.FILTER_LIST=[]
-        self.ex_split_point=[]
+        self.FILTER_PARAM = []
 
         self.GOOD_SAMPLE_FOLDER="C:/workspace/insp_by_oneclasssvm_ver2/good_sample/" #良品画像が入ったフォルダ
         self.PARENT_IMG_FILE="C:/workspace/insp_by_oneclasssvm_ver2/00000AA.JPG" #良品画像が入ったフォルダ
         self.TEST_SAMPLE_FOLDER="C:/workspace/insp_by_oneclasssvm_ver2/test_sample/" #テスト画像が入ったフォルダ
 
         #outputFolder
+        #複数条件に対応できるようにリスト化 23/08/15
         self.GOOD_RESULT_FILE = "C:/workspace/insp_by_oneclasssvm_ver2/good_data.csv"
         self.OUTPUT_RESULT_FILE = "C:/workspace/insp_by_oneclasssvm_ver2/result_data.csv"
         self.OUTPUT_ALL_IMAGE = "C:/workspace/insp_by_oneclasssvm_ver2/all_image/"
         self.OUTPUT_FAIL_IMAGE = "C:/workspace/insp_by_oneclasssvm_ver2/fail_image/"
-        self.OUTPUT_GOOD_IMAGE = "C:/workspace/insp_by_oneclasssvm_ver2/good_image/"
-        self.SPLIT_DATA_FILE = "C:/workspace/insp_by_oneclasssvm_ver2/rect_0614.csv"
-        self.PICKLE_MODEL_FILE = "C:/workspace/insp_by_oneclasssvm_ver2/model.pickle"
-        self.PICKLE_SCORE_FILE = "C:/workspace/insp_by_oneclasssvm_ver2/score.pickle"
+        self.SPLIT_DATA_FILE = []
+        self.PICKLE_MODEL_FILE = ""
+        self.PICKLE_SCORE_FILE = ""
 
         #矩形リストの初期値
         #0->top, 1->right, 2->bottom, 3->left
@@ -86,21 +78,22 @@ class insp:
         self.OUTPUT_RESULT_FILE = result_folder + "result_data_"+LotNo+".csv"
         self.OUTPUT_ALL_IMAGE = result_folder + "all_image/"
         self.OUTPUT_FAIL_IMAGE = result_folder + "fail_image/"
-        self.OUTPUT_GOOD_IMAGE = result_folder + "good_image/"
-        self.SPLIT_DATA_FILE = parameter_folder + "split_data.csv"
-        self.EX_SPLIT_DATA_FILE = parameter_folder + "ex_split_data.csv"
-        self.PICKLE_MODEL_FILE = parameter_folder + "model.pickle"
-        self.PICKLE_SCORE_FILE = parameter_folder + "score.pickle"
+    
+        #ファイルアドレスの設定
+        self.PICKLE_MODEL_FILE = parameter_folder
+        self.PICKLE_SCORE_FILE = parameter_folder
 
         #設定ファイルの読み込み
         setting_file_address = parameter_folder+"setting.txt"
         setting_file = open(setting_file_address,"r")
         setting_line = setting_file.readline()
 
+        #フィルターの数
+        self.filter_num = 1
         while setting_line:
             
-            setting_item = setting_line.split(" ")
-            
+            setting_item = setting_line.replace("\n","").split(" ")
+
             if setting_item[0] == "CHIP_THRESHOLD":
                 self.CHIP_THRESHOLD = int(setting_item[1])
             elif setting_item[0] == "CHIP_IMAGE_SIZE":
@@ -121,6 +114,8 @@ class insp:
                 self.ERODE_NUM = int(setting_item[1])
             elif setting_item[0] == "DILATE_NUM":
                 self.DILATE_NUM = int(setting_item[1])
+            elif setting_item[0] == "ONE_TEST_SIZE":
+                self.ONE_TEST_SIZE = int(setting_item[1])
             elif setting_item[0] == "NU":
                 self.NU = float(setting_item[1])
             elif setting_item[0] == "GAMMA":
@@ -133,23 +128,30 @@ class insp:
                 self.STD_TYPE = setting_item[1].replace("\n","")
             elif setting_item[0] == "BRIGHTNESS_MATCH":
                 self.BRIGHTNESS_MATCH = int(setting_item[1])
-            elif setting_item[0] == "BILATERAL_SIZE":
-                self.BILATERAL_SIZE = int(setting_item[1])
-            elif setting_item[0] == "UNSHARP_SIZE":
-                self.UNSHARP_SIZE = int(setting_item[1])
-            elif setting_item[0] == "ADJUST_ALPHA":
-                self.ADJUST_ALPHA = float(setting_item[1])
-            elif setting_item[0] == "ADJUST_BETA":
-                self.ADJUST_BETA = float(setting_item[1])
-            elif setting_item[0] == "FILTER_LIST" and len(setting_item)>1:
-                for filter_name in setting_item[1].split(","):
-                    self.FILTER_LIST.append(filter_name.replace("\n",""))
-            elif setting_item[0] == "SOBEL_K":
-                self.SOBEL_K = int(setting_item[1])
-            elif setting_item[0] == "SIGMOID_COEFF":
-                self.sigmoid_coeff = float(setting_item[1])
-            elif setting_item[0] == "SIGMOID_STD":
-                self.sigmoid_std == float(setting_item[1])
+            if setting_item[0] == "<FILTER>":
+                """FILTER設定を複数条件に対応 23/8/15"""
+                """FILTER_LIST -> [[FILTER_LIST-1],[FILTER_LISTS-2],---]"""
+                """FILTER_PARAM -> [[[PARAM-1.1],[PARAM-1.2]],[[PARAM-2.1],[PARAM-2.2]]]"""
+                while setting_item[0] != "<END>":
+                    if setting_item[0] == "FILTER_LIST": #フィルターとパラメータを引っ張る
+                        tmp_filter = []
+                        tmp_param = []
+                        for item in setting_item[1].split(","):
+                            if len(item.split("_"))==2:
+                                tmp_filter.append(item.split("_")[0])
+                                tmp_param.append([int(item.split("_")[1])])
+                            elif len(item.split("_"))==3:
+                                tmp_filter.append(item.split("_")[0])
+                                tmp_param.append([int(item.split("_")[1]),int(item.split("_")[2])])
+                            else:
+                                print("setting.txtのFILTER PARAMETERの記述が間違っています")
+                                sys.exit()
+                        self.FILTER_LIST.append(tmp_filter)
+                        self.FILTER_PARAM.append(tmp_param)
+                    elif setting_item[0] == "SPLIT_DATA": #split_dataのファイル名
+                        self.SPLIT_DATA_FILE.append(parameter_folder+setting_item[1])
+                    setting_line = setting_file.readline()
+                    setting_item = setting_line.replace("\n","").split(" ")
             elif setting_item[0] == "RECT_LEFT":
                 data = setting_item[1].split(",")
                 self.rectangle_point[3][0][0] = int(data[0])
@@ -176,10 +178,10 @@ class insp:
                 self.rectangle_point[2][1][1] = int(data[3])
 
             setting_line = setting_file.readline()
-
+            
         setting_file.close()
 
-        return 0
+        return
 
     #チップの各辺の傾きを求める
     def get_line(self,img,rp):
@@ -482,42 +484,42 @@ class insp:
 
     #フィルター処理を実施
     def image_filter(self,image):
+        """複数フィルターに対応できるように変更 23/8/16"""
+        images = [] #returnに使うリスト
 
-        #鮮鋭化処理のカーネル
-        k=self.UNSHARP_SIZE
-        unsharp_kernel = np.array([[-k/9,-k/9,-k/9],
-                                  [-k/9,1+8*k/9,k/9],
-                                  [-k/9,-k/9,-k/9]],np.float32)
+        for i,filters in enumerate(self.FILTER_LIST):
+            img_after_filter = image.copy()
+            for j,filter_name in enumerate(filters):
+                if filter_name == "BILATERAL":
+                    img_after_filter = cv2.bilateralFilter(img_after_filter,d=self.FILTER_PARAM[i][j][0],sigmaColor=100,sigmaSpace=10)
+                elif filter_name == "UNSHARP":
+                    #鮮鋭化処理のカーネル
+                    k=self.FILTER_PARAM[i][j][0]
+                    unsharp_kernel = np.array([[-k/9,-k/9,-k/9],
+                                            [-k/9,1+8*k/9,k/9],
+                                            [-k/9,-k/9,-k/9]],np.float32)
+                    img_after_filter = cv2.filter2D(img_after_filter,-1,unsharp_kernel).astype("uint8")
+                elif filter_name == "ADJUST":
+                    img_after_filter = self.adjust(img_after_filter,self.FILTER_PARAM[i][j][0],self.FILTER_PARAM[i][j][1])
+                elif filter_name == "SOBEL":
+                    grid_x = cv2.Sobel(img_after_filter,cv2.CV_32F,1,0,self.FILTER_PARAM[i][j][0])
+                    grid_y = cv2.Sobel(img_after_filter,cv2.CV_32F,0,1,self.FILTER_PARAM[i][j][1])
+                    img_after_filter = np.sqrt(grid_x**2+grid_y**2).astype("uint8")
+                elif filter_name == "SIGMOID":
+                    img_after_filter = 255/(1+np.exp(-self.FILTER_PARAM[i][j][0]*(img_after_filter-self.FILTER_PARAM[i][j][1])/255))
+                    img_after_filter = img_after_filter.astype("uint8")
+                else:
+                    print("フィルターの指定が間違っています")
+                    sys.exit()
 
-        img_after_filter = image.copy()
+            images.append(img_after_filter)
 
-        for filter_name in self.FILTER_LIST:
-
-            if filter_name == "BILATERAL":
-                img_after_filter = cv2.bilateralFilter(img_after_filter,d=self.BILATERAL_SIZE,sigmaColor=100,sigmaSpace=10)
-            elif filter_name == "UNSHARP":
-                img_after_filter = cv2.filter2D(img_after_filter,-1,unsharp_kernel).astype("uint8")
-            elif filter_name == "ADJUST":
-                img_after_filter = self.adjust(img_after_filter,self.ADJUST_ALPHA,self.ADJUST_BETA)
-            elif filter_name == "SOBEL":
-                grid_x = cv2.Sobel(img_after_filter,cv2.CV_32F,1,0,self.SOBEL_K)
-                grid_y = cv2.Sobel(img_after_filter,cv2.CV_32F,0,1,self.SOBEL_K)
-                img_after_filter = np.sqrt(grid_x**2+grid_y**2).astype("uint8")
-            elif filter_name == "SIGMOID":
-                a = self.sigmoid_coeff
-                b = self.sigmoid_std
-                img_after_filter = 255/(1+np.exp(-a*(img_after_filter-b)/255))
-                img_after_filter = img_after_filter.astype("uint8")
-            else:
-                print("フィルターの指定が間違っています")
-                sys.exit()
-
-        return img_after_filter
+        return images
 
     #差分を取得する
-    def get_diff_image_list(self,img_good_average,image,split_data,brightness_data,n,mode,img_path):
-       
-        diff_image_list=[]
+    def get_diff_image_list(self,img_good_average,image,brightness_data,n,mode,img_path):
+        '''FILTERが複数の場合に対応 23/8/16'''
+        diff_image_list=[[] for i in range(len(self.FILTER_LIST))] #最終結果を入れるリスト
 
         a_b_list = self.get_line(image,self.rectangle_point)
         img_affine,theta= self.get_rotate_image(image,a_b_list)
@@ -525,11 +527,8 @@ class insp:
 
         #お手本との輝度合わせを実施する
         if self.BRIGHTNESS_MATCH==1:
-
             img = (img-np.mean(img))/np.std(img)*brightness_data[1]+brightness_data[0]
-
-            #8bitに調整
-            img = np.clip(img,0,255)
+            img = np.clip(img,0,255) #8bitに調整
             img = img.astype(np.uint8)
 
         if mode==0:
@@ -544,200 +543,197 @@ class insp:
 
         #スプリットする前にフィルターをかける
         if len(self.FILTER_LIST) > 0:
-            img = self.image_filter(img)
+            img_list = self.image_filter(img)
 
         #split_dataで画像を切り取っていく
-        for s_num,s in enumerate(split_data):
-            x = s[0] #5~1495
-            y = s[1] #5
-            lx = s[2] #60
-            ly = s[3] #65
+        for i,split_data in enumerate(self.SPLIT_DATA):
+            for j,s in enumerate(split_data):
+                '''FILTERが複数の場合に対応 23/8/16'''
+                x = s[0] #split_data 左上
+                y = s[1] #split_data 右上
+                lx = s[2] #split_data 幅
+                ly = s[3] #split_data 高さ
 
-            template = img_good_average[y-self.TEST_PADDING_Y:y+ly+self.TEST_PADDING_Y,x-self.TEST_PADDING_X:x+lx+self.TEST_PADDING_X]
-            test_image = img[y:y+ly,x:x+lx]
-            
-            #テンプレートマッチング
-            res = cv2.matchTemplate(template,test_image,cv2.TM_CCOEFF_NORMED)
+                template = img_good_average[i][y-self.TEST_PADDING_Y:y+ly+self.TEST_PADDING_Y,x-self.TEST_PADDING_X:x+lx+self.TEST_PADDING_X]
+                test_image = img_list[i][y:y+ly,x:x+lx]
+                
+                #テンプレートマッチング
+                res = cv2.matchTemplate(template,test_image,cv2.TM_CCOEFF_NORMED)
 
-            #最もマッチングしている部分を取り出し
-            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-            tmp_image_match = template[max_loc[1]:max_loc[1]+ly,max_loc[0]:max_loc[0]+lx]
+                #最もマッチングしている部分を取り出し
+                _,_,_,max_loc = cv2.minMaxLoc(res)
+                tmp_image_match = template[max_loc[1]:max_loc[1]+ly,max_loc[0]:max_loc[0]+lx]
 
-            #良品とテンプレートにfilterをかける
-            #test_image_after_filter = self.image_filter(test_image)
-            #template_after_filter = self.image_filter(tmp_image_match)
+                img_diff = cv2.absdiff(test_image,tmp_image_match)
 
-            img_diff = cv2.absdiff(test_image,tmp_image_match)
-
-            diff_image_list.append((img_diff/255).flatten()) #diff imageを0~1に正規化
+                diff_image_list[i].append((img_diff/255).flatten()) #diff imageを0~1に正規化
 
         return diff_image_list
      
-    def learn_good_feature(self,good_diff_image_list,split_num):
+    def learn_good_feature(self,good_diff_image_list):
+        """複数フィルターに対応できるように変更 23/08/16"""
+        models=[[] for i in range(len(good_diff_image_list))]
 
-        models=[]
-
-        #train_features -> split_num X 良品見本数
-        for i,features in enumerate(good_diff_image_list):
-            print("\r{}番目の特徴のモデル作成".format(i+1),end="")
-            features = np.array(features)
-            model = svm.OneClassSVM(nu=self.NU,gamma=self.GAMMA)
-            model.fit(features)
-            models.append(model)
+        #good_diff_image_list フィルターの種類 X 分割の数 X 良品画像の数
+        for i,features_per_filter in enumerate(good_diff_image_list): 
+            for j,features in enumerate(features_per_filter):
+                print("\r{}番目の分割の{}番目の特徴のモデル作成".format(i+1,j+1),end="")
+                features = np.array(features)
+                model = svm.OneClassSVM(nu=self.NU,gamma=self.GAMMA)
+                model.fit(features)
+                models[i].append(model)
 
         #pickleファイルにモデルを書き出し
-        with open(self.PICKLE_MODEL_FILE,mode="wb") as fo:
-            pickle.dump(models,fo)
+        for i,model in enumerate(models):
+            with open(self.PICKLE_MODEL_FILE+"model_"+str(i+1)+".pickle",mode="wb") as fo:
+                pickle.dump(model,fo)
 
         return models
 
+    #良品のスコアを計算
+    def good_predict(self,models,good_diff_image_list):
+        """複数フィルターに対応できるように変更 23/08/16"""
+        results=[[] for i in range(len(good_diff_image_list))]
+
+        #good_features -> フィルターの数 X 分割数 X 良品画像数
+        for i,features_per_filter in enumerate(good_diff_image_list):
+            for j,features in enumerate(features_per_filter):
+                features = np.array(features)
+                result = models[i][j].score_samples(features)
+                results[i].append(result)
+
+        #pickleファイルに良品スコアを書き出し
+        for i,result in enumerate(results):
+            with open(self.PICKLE_SCORE_FILE+"score_"+str(i+1)+".pickle",mode="wb") as fo:
+                pickle.dump(result,fo)
+
+        return results
+
+    #テスト画像のスコアを計算
+    def result_predict(self,models,test_diff_image_list,split_num):
+        """複数フィルターに対応できるように変更 23/08/16"""
+        results=[[] for i in range(len(test_diff_image_list))]
+
+        #test_features -> フィルター数 X split_num X テスト数
+        for i,features_per_filter in enumerate(test_diff_image_list):
+            for j,features in enumerate(features_per_filter):
+                features = np.array(features)
+                result = models[i][j].score_samples(features)
+                result_list = result.tolist()
+                results[i].append(result_list)
+
+        return results
+
     #良品学習スキップ時にpickleファイルを読み込む
     def load_model_pickle(self):
-        
-        with open(self.PICKLE_MODEL_FILE,mode="rb") as fm:
-            models = pickle.load(fm)
+        """複数フィルターに対応できるように変更 23/08/16"""
+        '''Filterの種類が何種類あるかをself.FILTER_LISTから取得'''
+        '''そのあとpickleの読込を開始'''
+        models = [[] for i in range(len(self.FILTER_LIST))]
+        for i in range(len(self.FILTER_LIST)):
+            filename = self.PICKLE_MODEL_FILE + "model_" + str(i+1)+".pickle"
+            with open(filename,mode="rb") as fm:
+                models[i] = pickle.load(fm)
 
         return models
 
     #良品学習スキップ時にpickleファイルを読み込む
     def load_score_pickle(self):
-        
-        with open(self.PICKLE_SCORE_FILE,mode="rb") as fs:
-            scores = pickle.load(fs)
+        """複数フィルターに対応できるように変更 23/08/16"""
+        '''Filterの種類が何種類あるかをself.FILTER_LISTから取得'''
+        '''そのあとpickleの読込を開始'''
+        scores = [[] for i in range(len(self.FILTER_LIST))]
+        for i in range(len(self.FILTER_LIST)):
+            filename = self.PICKLE_SCORE_FILE + "score_"+str(i+1)+".pickle"
+            with open(filename,mode="rb") as fs:
+                scores[i] = pickle.load(fs)
 
         return scores
 
-
-    def good_predict(self,models,good_diff_image_list,split_num):
-
-        results = []
-
-        #good_features -> split_num X テスト数
-        for i,features in enumerate(good_diff_image_list):
-            features = np.array(features)
-            result = models[i].score_samples(features)
-            results.append(result)
-
-        #pickleファイルに良品スコアを書き出し
-        with open(self.PICKLE_SCORE_FILE,mode="wb") as fo:
-            pickle.dump(results,fo)
-
-        return results
-
-    def result_predict(self,models,test_diff_image_list,split_num):
-
-        test_features=[[] for i in range(split_num)]
-        results = []
-
-        for i,images in enumerate(test_diff_image_list):
-            for j,image in enumerate(images):
-                test_features[j].append(image.flatten())
-
-        #train_features -> split_num X テスト数
-        for i,features in enumerate(test_features):
-            features = np.array(features)
-            result = models[i].score_samples(features)
-            result_list = result.tolist()
-            results.append(result_list)
-        return results
-
     def set_standards(self,test_scores):
+        """複数フィルターに対応できるように変更 23/08/16"""
+        standards = [[] for i in range(len(self.FILTER_LIST))]
 
-        standards = []
-
-        print("ex_coeffを適用するポイント数:{}".format(len(self.ex_split_point)))
-
-        for i,score in enumerate(test_scores):
-            med = np.median(score) #良品学習スコアの内最小値を規格に置く
-            std = np.std(score)
-
-            #ex_coeffを適用するかどうか
-            if i in self.ex_split_point:
-                standard = med-self.EX_COEFF*std
-            else:
+        for i,test_scores_per_filter in enumerate(test_scores):
+            for score in test_scores_per_filter:
+                med = np.median(score) #良品学習スコアの内最小値を規格に置く
+                std = np.std(score)
                 standard = med-self.STD_COEFF*std
-
-            standards.append(standard)
+                standards[i].append(standard)
 
         return standards
 
-    def judge_pass_fail(self,standards,test_predictions,split_data,test_num,test_image_name):
+    def judge_pass_fail(self,standards,test_predictions,test_num,test_image_name):
+        """複数フィルターに対応できるように変更 23/08/16"""
+        #predictionsはフィルター数 X split_num X テストサンプル数
 
-        #predictionsはsplit_num X テストサンプル数
+        judge_result=[]
+        for i in range(len(test_predictions)):
+            judge_result.append([[] for i in range(test_num)]) #フィルター数Xサンプル数のリストを作成
 
-        judge_result=[[] for i in range(test_num)] #サンプル数Xsplit_num
+        #judge_result[フィルターの番号][画像番号] に 分割番号ごとに1か0を入れていく
+        for i,predictions_per_filter in enumerate(test_predictions): #i フィルターの番号
+            for j,predictions in enumerate(predictions_per_filter): #j 分割数
+                for k,p in enumerate(predictions): # 画像数
+                    if p < standards[i][j]:
+                        judge_result[i][k].append("1")
+                    else:
+                        judge_result[i][k].append("0")
 
-        for i,test_prediction in enumerate(test_predictions): #i split_num
-            for j,p in enumerate(test_prediction): # 画像数
-                if p < standards[i]:
-                    judge_result[j].append("1")
-                else:
-                    judge_result[j].append("0")
+        #どの画像のどの部分が不良かを書き出す
+        fail_image_list = [[] for i in range(test_num)] 
+        for i,result_per_filter in enumerate(judge_result):
+            for j,result in enumerate(result_per_filter):
+                if "1" in result:
+                    for k,r in enumerate(result):
+                        if r=="1":
+                            x1 = self.SPLIT_DATA[i][k][0] #矩形左上 X
+                            y1 = self.SPLIT_DATA[i][k][1] #矩形右上 Y
+                            x2 = x1+self.SPLIT_DATA[i][k][2] #矩形右下 X
+                            y2 = y1+self.SPLIT_DATA[i][k][3] #矩形右下 Y
+                            fail_image_list[j].append([i,x1,y1,x2,y2])
+        
+        #Fail画像に矩形を描画する
+        #現状3種類までしか対応していない
+        color_pallete = [(200,0,0),(0,200,0),(0,0,200)]
 
-        #不良個所に矩形を書く
-        for i,result in enumerate(judge_result):
-            if "1" in result:
-                fail_img = cv2.imread(self.OUTPUT_ALL_IMAGE+test_image_name[i]+".jpg",cv2.COLOR_GRAY2RGB)
-                for j,r in enumerate(result):
-                    if r=="1":
-                        x1 = split_data[j][0] #矩形左上のx座標
-                        y1 = split_data[j][1] #矩形左上のy座標
-                        x2 = x1+split_data[j][2] #矩形右下のx座標
-                        y2 = y1+split_data[j][3] #矩形右下のy座標
-                        cv2.rectangle(fail_img,(x1,y1),(x2,y2),(0,200,0),1)
-                        cv2.putText(fail_img,str(j+1),(x1,y1),cv2.FONT_HERSHEY_PLAIN,1.5,(0,200,0),1,cv2.LINE_AA)
+        for i,info in enumerate(fail_image_list):
+            if len(info)>0:
+                fail_img = cv2.imread(self.OUTPUT_ALL_IMAGE+test_image_name[i]+".jpg")
+                #fail_img = cv2.cvtColor(fail_img,cv2.COLOR_GRAY2RGBA)
+                for rd in info:
+                    cv2.rectangle(fail_img,(rd[1],rd[2]),(rd[3],rd[4]),color_pallete[rd[0]],1)
+
                 cv2.imwrite(self.OUTPUT_FAIL_IMAGE+test_image_name[i]+".jpg",fail_img)
-            #else:
-                #good_img = cv2.imread(self.OUTPUT_ALL_IMAGE+str(i+1)+".jpg",cv2.COLOR_GRAY2RGB)
-                #cv2.imwrite(self.OUTPUT_GOOD_IMAGE+str(i+1)+".jpg",good_img)
 
         return judge_result
 
     #スプリットデータ読み込み
     def get_split_data(self):
-
-        split_data=[]
-        ex_split_data=[]
-        std_lower=[]
-
-        #split_data読込
-        split_data_file = open(self.SPLIT_DATA_FILE,"r")
-        split_data_line = split_data_file.readline()
-        while split_data_line:
-            d = split_data_line.replace("\n","").split(",")
-            split_data.append([int(d[0]),int(d[1]),int(d[2]),int(d[3])])
-
-            if self.STD_TYPE=="FIX":
-                std_lower.append(float(d[4]))
-
+        """split_dataが複数版に対応 23/8/16"""
+        num = len(self.FILTER_LIST)  #split_fileの数 = FILTER_LISTの数
+        self.SPLIT_DATA = [[] for i in range(num)]
+        std_lower=[[] for i in range(num)] #規格がFIXの時の規格
+        for i in range(num):
+            #split_data読込
+            filename = self.SPLIT_DATA_FILE[i]
+            split_data_file = open(filename,"r")
             split_data_line = split_data_file.readline()
+            while split_data_line:
+                d = split_data_line.replace("\n","").split(",")
+                self.SPLIT_DATA[i].append([int(d[0]),int(d[1]),int(d[2]),int(d[3])])
 
-        split_data_file.close()
+                if self.STD_TYPE=="FIX":
+                    std_lower[i].append(float(d[4]))
 
-        #ex_split_dataがあれば読込
-        if os.path.exists(self.EX_SPLIT_DATA_FILE):
-            ex_split_data_file = open(self.EX_SPLIT_DATA_FILE,"r")
-            ex_split_data_line = ex_split_data_file.readline()
+                split_data_line = split_data_file.readline()
 
-            while ex_split_data_line:
-                d = ex_split_data_line.replace("\n","").split(",")
-                ex_split_data.append([int(d[0]),int(d[1]),int(d[2]),int(d[3])])
-
-                ex_split_data_line = ex_split_data_file.readline()
-
-            ex_split_data_file.close()
-
-            #EX_COEFFを適用する分割を抽出->self.ex_split_pointに格納
-            for i,esd in enumerate(ex_split_data):
-                for j,sd in enumerate(split_data):
-
-                    if esd[0] == sd[0] and esd[1]==sd[1] and esd[2]==sd[2] and esd[3]==sd[3]:
-                        self.ex_split_point.append(j)
+            split_data_file.close()
 
         if self.STD_TYPE=="FIX":
-            return split_data,std_lower 
+            return std_lower 
         else:
-            return split_data
+            return
 
 """メイン"""
 if __name__=="__main__":
