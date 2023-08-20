@@ -32,7 +32,7 @@ class insp:
         self.DILATE_NUM = 10
         self.NU = 0.001
         self.GAMMA = 0.001
-        self.STD_COEFF = 6
+        self.STD_COEFF = []
         self.EX_COEFF = 20
         self.STD_TYPE = "FIX"
         self.BRIGHTNESS_MATCH = 1 #良品画像と輝度を合わせる
@@ -120,8 +120,6 @@ class insp:
                 self.NU = float(setting_item[1])
             elif setting_item[0] == "GAMMA":
                 self.GAMMA = float(setting_item[1])
-            elif setting_item[0] == "STD_COEFF":
-                self.STD_COEFF = float(setting_item[1])
             elif setting_item[0] == "EX_COEFF":
                 self.EX_COEFF = float(setting_item[1])
             elif setting_item[0] == "STD_TYPE":
@@ -150,6 +148,8 @@ class insp:
                         self.FILTER_PARAM.append(tmp_param)
                     elif setting_item[0] == "SPLIT_DATA": #split_dataのファイル名
                         self.SPLIT_DATA_FILE.append(parameter_folder+setting_item[1])
+                    elif setting_item[0] == "STD_COEFF":
+                        self.STD_COEFF.append(float(setting_item[1]))
                     setting_line = setting_file.readline()
                     setting_item = setting_line.replace("\n","").split(" ")
             elif setting_item[0] == "RECT_LEFT":
@@ -503,7 +503,7 @@ class insp:
                     img_after_filter = self.adjust(img_after_filter,self.FILTER_PARAM[i][j][0],self.FILTER_PARAM[i][j][1])
                 elif filter_name == "SOBEL":
                     grid_x = cv2.Sobel(img_after_filter,cv2.CV_32F,1,0,self.FILTER_PARAM[i][j][0])
-                    grid_y = cv2.Sobel(img_after_filter,cv2.CV_32F,0,1,self.FILTER_PARAM[i][j][1])
+                    grid_y = cv2.Sobel(img_after_filter,cv2.CV_32F,0,1,self.FILTER_PARAM[i][j][0])
                     img_after_filter = np.sqrt(grid_x**2+grid_y**2).astype("uint8")
                 elif filter_name == "SIGMOID":
                     img_after_filter = 255/(1+np.exp(-self.FILTER_PARAM[i][j][0]*(img_after_filter-self.FILTER_PARAM[i][j][1])/255))
@@ -539,7 +539,7 @@ class insp:
             print("\r{}枚目 {}を処理中".format(n,img_path),end="")
         elif mode==1:
             #良品学習時
-            print("\r{}枚目を処理中".format(n),end="")
+            print("\r{}枚目 {}を処理中".format(n,img_path),end="")
 
         #スプリットする前にフィルターをかける
         if len(self.FILTER_LIST) > 0:
@@ -566,7 +566,8 @@ class insp:
 
                 img_diff = cv2.absdiff(test_image,tmp_image_match)
 
-                diff_image_list[i].append((img_diff/255).flatten()) #diff imageを0~1に正規化
+                #diff_image_list[i].append((img_diff/255).flatten()) #diff imageを0~1に正規化
+                diff_image_list[i].append((img_diff).flatten()) #省メモリのために正規化を後で行う
 
         return diff_image_list
      
@@ -578,7 +579,7 @@ class insp:
         for i,features_per_filter in enumerate(good_diff_image_list): 
             for j,features in enumerate(features_per_filter):
                 print("\r{}番目の分割の{}番目の特徴のモデル作成".format(i+1,j+1),end="")
-                features = np.array(features)
+                features = np.array(features)/255
                 model = svm.OneClassSVM(nu=self.NU,gamma=self.GAMMA)
                 model.fit(features)
                 models[i].append(model)
@@ -598,7 +599,7 @@ class insp:
         #good_features -> フィルターの数 X 分割数 X 良品画像数
         for i,features_per_filter in enumerate(good_diff_image_list):
             for j,features in enumerate(features_per_filter):
-                features = np.array(features)
+                features = np.array(features)/255
                 result = models[i][j].score_samples(features)
                 results[i].append(result)
 
@@ -617,7 +618,7 @@ class insp:
         #test_features -> フィルター数 X split_num X テスト数
         for i,features_per_filter in enumerate(test_diff_image_list):
             for j,features in enumerate(features_per_filter):
-                features = np.array(features)
+                features = np.array(features)/255
                 result = models[i][j].score_samples(features)
                 result_list = result.tolist()
                 results[i].append(result_list)
@@ -658,7 +659,7 @@ class insp:
             for score in test_scores_per_filter:
                 med = np.median(score) #良品学習スコアの内最小値を規格に置く
                 std = np.std(score)
-                standard = med-self.STD_COEFF*std
+                standard = med-self.STD_COEFF[i]*std
                 standards[i].append(standard)
 
         return standards

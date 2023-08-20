@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg,NavigationToolbar2Tk
 import subprocess
+import gc
 
 """VERSION 4.1"""
 """複数条件の処理に対応可能なように変更"""
@@ -1227,24 +1228,28 @@ class Application(tk.Frame):
                 images = glob.glob(insp_test.GOOD_SAMPLE_FOLDER+folder+"/*AA.JPG")
                 for image in images:
                     good_image_list.append(image)
+            del good_folder_list
+            gc.collect()
 
             #ONE_TEST_SIZE区切りの2次元配列に変換
             good_images=[]
             for i,image_file in enumerate(good_image_list):
-
                 if (i+1)%insp_test.ONE_TEST_SIZE==0:
                     tmp.append(image_file)
                     good_images.append(tmp)
                     continue
-                
                 if i%insp_test.ONE_TEST_SIZE==0:
                     tmp=[]
                     tmp.append(image_file)
                     continue
 
                 tmp.append(image_file)
-            good_images.append(tmp) 
+
             good_num = len(good_image_list)
+            if good_num%insp_test.ONE_TEST_SIZE != 0: 
+                good_images.append(tmp)
+            del tmp
+            gc.collect() 
             print("良品画像数は{}枚です".format(good_num))
 
             #良品画像と平均画像の差分ベクトルを作成
@@ -1272,19 +1277,24 @@ class Application(tk.Frame):
                             good_diff_image_list[k][l].append(diff_image_list[k][l])
 
                     del diff_image_list
+                    gc.collect()
 
                #メモリ開放
                 del good_image_list
+                gc.collect()
 
             #one-class-svmで良品学習
-            print("良品学習中")
+            print("\n良品学習中")
             models = insp_test.learn_good_feature(good_diff_image_list)
 
             #スコア判定規格設定
             print("\nスコア判定規格設定中")
             good_scores = insp_test.good_predict(models,good_diff_image_list)
             del good_diff_image_list
+            gc.collect()
 
+            #one-class-svmで良品学習
+            print("良品学習中")
             """良品スコアのcsvへの書き出し"""
             output_file = open(insp_test.GOOD_RESULT_FILE,"w")
             #header
@@ -1369,12 +1379,12 @@ class Application(tk.Frame):
         if not os.path.exists(insp_test.OUTPUT_FAIL_IMAGE):
             os.makedirs(insp_test.OUTPUT_FAIL_IMAGE)
 
-        #test_diff_image_listを初期化
-        test_diff_image_list = []
-        for i in range(len(split_num)):
-            test_diff_image_list.append([[] for s in range(split_num[i])])
 
         for i,images in enumerate(test_images):
+            #test_diff_image_listを初期化
+            test_diff_image_list = []
+            for m in range(len(split_num)):
+                test_diff_image_list.append([[] for s in range(split_num[m])])
             test_image_list=[] #opencvで開いた画像を入れる
             img_name_list = [] #画像の名前を入れる
             for j,image in enumerate(images): #imagesはONE_TEST_SIZE枚画像が入っている
@@ -1412,6 +1422,11 @@ class Application(tk.Frame):
         #良品不良品判定
         judge_results = insp_test.judge_pass_fail(standards,predictions,test_num,test_image_name)
 
+        output_predictions = []
+        for j in range(len(split_num)):
+            output_predictions.append(np.array(predictions[j]).T)
+        del predictions
+        gc.collect()
         #result出力用に転置する
         #output_predictions = np.array(predictions).T
 
@@ -1419,9 +1434,9 @@ class Application(tk.Frame):
         output_file = open(insp_test.OUTPUT_RESULT_FILE,"w")
         #header出力
         output_line = "standards,,,,,,,"
-        for i,s in enumerate(split_num):
-            for j in range(s):
-                output_line+=","
+        #for i,s in enumerate(split_num):
+        #    for j in range(s):
+        #        output_line+=","
         for i,s in enumerate(split_num):
             for j in range(s):
                 output_line+=str(standards[i][j])+","
@@ -1429,9 +1444,9 @@ class Application(tk.Frame):
         output_file.write(output_line)
         output_file.write("\n")
         output_line = "no,p/f,theta,x,y,w,h,"
-        for i,s in enumerate(split_num):
-            for j in range(s):
-                output_line+=str(i+1)+"_"+str(j+1)+","
+        #for i,s in enumerate(split_num):
+        #    for j in range(s):
+        #        output_line+=str(i+1)+"_"+str(j+1)+","
         for i,s in enumerate(split_num):
             for j in range(s):
                 output_line+=str(i+1)+"_"+str(j+1)+","
@@ -1454,14 +1469,13 @@ class Application(tk.Frame):
                 pass_num += 1
 
             #各矩形のp/f(0/1)出力
-            for j in range(len(split_num)): #分割数
-                for k in range(split_num[j]):
-                    output_line+=judge_results[j][i][k]+","
+            #for j in range(len(split_num)): #分割数
+            #    for k in range(split_num[j]):
+            #        output_line+=judge_results[j][i][k]+","
 
             #score出力
             for j in range(len(split_num)):
-                output_predictions = np.array(predictions[j]).T
-                for p in output_predictions[i]:
+                for p in output_predictions[j][i]:
                     output_line+=str(p)+","
                 
             output_line += "\n"
