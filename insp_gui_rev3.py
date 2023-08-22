@@ -180,6 +180,10 @@ class Application(tk.Frame):
         self.type_radio2 = tk.Radiobutton(self.tab1,text="良品学習のみ",font=("MSゴシック","15"),command=self.type_radio_click,variable=self.type_radio_value,value=2)
         self.type_radio3 = tk.Radiobutton(self.tab1,text="PAT処理",font=("MSゴシック","15"),command=self.type_radio_click,variable=self.type_radio_value,value=3)
 
+        self.log_text = tk.Text(self.tab1)
+        scrollbar = ttk.Scrollbar(self.tab1,orient="vertical",command=self.log_text.yview)
+        self.log_text["yscrollcommand"] = scrollbar.set
+
         #処理開始ボタン
         btn_Main = tk.Button(self.tab1, text = "処理開始", font=("MSゴシック","20","bold"),command = self.start_main_process)
 
@@ -196,8 +200,9 @@ class Application(tk.Frame):
         self.type_radio1.place(x=15,y=225,height=20)
         self.type_radio2.place(x=15,y=245,height=20)
         self.type_radio3.place(x=15,y=265,height=20)
-
-        btn_Main.place(x=10,y=500,height=30)
+        self.log_text.place(x=15,y=300,width=300,height=200)
+        scrollbar.place(x=315,y=300,height=200)
+        btn_Main.place(x=10,y=530,height=30)
 
         #----------------------------
         #tab2 解析のwidget
@@ -966,14 +971,11 @@ class Application(tk.Frame):
         #####################################################
         # Canvas(画像の表示用)
         self.fig_canvas = FigureCanvasTkAgg(self.fig,self.canvas)
-        self.toolbar = NavigationToolbar2Tk(self.fig_canvas)
+        self.toolbar = NavigationToolbar2Tk(self.fig_canvas,self.canvas)
         self.fig_canvas.get_tk_widget().pack(fill=tk.BOTH,expand=True)  # この両方でDock.Fillと同じ
-
         self.ax.scatter(x,y)
-
         #規格線を引く
         self.ax.axhline(std,color="red",lw=2)
-
         self.fig_canvas.draw()
     
         return 
