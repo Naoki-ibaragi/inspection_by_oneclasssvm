@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn import svm
 import pickle
-import glob
+import shutil
 
 """定数"""
 class insp:
@@ -180,6 +180,17 @@ class insp:
             setting_line = setting_file.readline()
             
         setting_file.close()
+
+        #settingファイルをアウトプットフォルダにコピーする
+        setting_file_address = parameter_folder+"setting.txt"
+        setting_file_address_to = result_folder + "setting.txt"
+
+        #resultフォルダーを作成する
+        if not os.path.exists(result_folder):
+            os.makedirs(result_folder)
+            shutil.copy(setting_file_address,setting_file_address_to)
+        else:
+            return 1
 
         return
 

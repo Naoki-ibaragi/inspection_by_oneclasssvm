@@ -14,6 +14,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg,NavigationToolbar2Tk
 import subprocess
 import gc
+import datetime
 
 """VERSION 4.1"""
 """複数条件の処理に対応可能なように変更"""
@@ -49,6 +50,10 @@ class Application(tk.Frame):
                     self.test_sample_address = ini_line.split(",")[1].replace("\n","")
                 elif "PARAMETER_ADDRESS" in ini_line:
                     self.parameter_address = ini_line.split(",")[1].replace("\n","")
+                elif "SURF_RESULT_ADDRESS" in ini_line:
+                    self.surf_resultfile_address = ini_line.split(",")[1].replace("\n","")
+                elif "TRAYDATA_ADDRESS" in ini_line:
+                    self.traydatafile_address = ini_line.split(",")[1].replace("\n","")
                 elif "OUTPUT_RESULT_ADDRESS" in ini_line:
                     self.output_result_address = ini_line.split(",")[1].replace("\n","")
                 
@@ -305,7 +310,7 @@ class Application(tk.Frame):
         """モーダルダイアログボックスを開く"""
         self.dlg_setting = tk.Toplevel(self)
         self.dlg_setting.title("アドレスを設定")
-        self.dlg_setting.geometry("650x400")
+        self.dlg_setting.geometry("650x600")
 
         self.dlg_setting.grab_set()
         self.dlg_setting.focus_set()
@@ -318,7 +323,6 @@ class Application(tk.Frame):
         self.test_address = tk.Entry(self.dlg_setting,textvariable=self.test_address_name)
         self.test_address.place(x=10,y=45,width=500,height=30)
         self.test_address.insert(0,self.test_sample_address)
-
         #参照・チェックボタンを設置
         btn_ref_1 = tk.Button(self.dlg_setting, text = "参照", font=("MSゴシック","15"),command = lambda: self.dlg_setting_ref(1))
         btn_ref_1.place(x=520,y=45,height=30)
@@ -332,38 +336,62 @@ class Application(tk.Frame):
         self.param_address = tk.Entry(self.dlg_setting,textvariable=self.param_address_name)
         self.param_address.place(x=10,y=115,width=500,height=30)
         self.param_address.insert(0,self.parameter_address)
-
         #参照・チェックボタンを設置
         btn_ref_2 = tk.Button(self.dlg_setting, text = "参照", font=("MSゴシック","15"),command = lambda: self.dlg_setting_ref(2))
         btn_ref_2.place(x=520,y=115,height=30)
         btn_chk_2 = tk.Button(self.dlg_setting, text = "確認", font=("MSゴシック","15"),command = lambda: self.dlg_setting_chk(2))
         btn_chk_2.place(x=580,y=115,height=30)
 
-        dlg_result_address_label = tk.Label(self.dlg_setting,text="検査結果出力フォルダ",font=("MSゴシック","15"))
-        dlg_result_address_label.pack()
-        dlg_result_address_label.place(x=10,y=150,height=30)
-        self.result_address_name = tk.StringVar()
-        self.result_address = tk.Entry(self.dlg_setting,textvariable=self.result_address_name)
-        self.result_address.place(x=10,y=185,width=500,height=30)
-        self.result_address.insert(0,self.output_result_address)
-
+        dlg_surf_result_address_label = tk.Label(self.dlg_setting,text="外観検査ResultFileフォルダ",font=("MSゴシック","15"))
+        dlg_surf_result_address_label.pack()
+        dlg_surf_result_address_label.place(x=10,y=150,height=30)
+        self.surf_result_address_name = tk.StringVar()
+        self.surf_result_address = tk.Entry(self.dlg_setting,textvariable=self.surf_result_address_name)
+        self.surf_result_address.place(x=10,y=185,width=500,height=30)
+        self.surf_result_address.insert(0,self.surf_resultfile_address)
         #参照・チェックボタンを設置
         btn_ref_3 = tk.Button(self.dlg_setting, text = "参照", font=("MSゴシック","15"),command = lambda: self.dlg_setting_ref(3))
         btn_ref_3.place(x=520,y=185,height=30)
         btn_chk_3 = tk.Button(self.dlg_setting, text = "確認", font=("MSゴシック","15"),command = lambda: self.dlg_setting_chk(3))
         btn_chk_3.place(x=580,y=185,height=30)
 
+        dlg_traydata_address_label = tk.Label(self.dlg_setting,text="トレイデータフォルダ",font=("MSゴシック","15"))
+        dlg_traydata_address_label.pack()
+        dlg_traydata_address_label.place(x=10,y=230,height=30)
+        self.traydata_address_name = tk.StringVar()
+        self.traydata_address = tk.Entry(self.dlg_setting,textvariable=self.traydata_address_name)
+        self.traydata_address.place(x=10,y=265,width=500,height=30)
+        self.traydata_address.insert(0,self.traydatafile_address)
+        #参照・チェックボタンを設置
+        btn_ref_4 = tk.Button(self.dlg_setting, text = "参照", font=("MSゴシック","15"),command = lambda: self.dlg_setting_ref(4))
+        btn_ref_4.place(x=520,y=265,height=30)
+        btn_chk_4 = tk.Button(self.dlg_setting, text = "確認", font=("MSゴシック","15"),command = lambda: self.dlg_setting_chk(4))
+        btn_chk_4.place(x=580,y=265,height=30)
+
+        dlg_result_address_label = tk.Label(self.dlg_setting,text="検査結果出力フォルダ",font=("MSゴシック","15"))
+        dlg_result_address_label.pack()
+        dlg_result_address_label.place(x=10,y=310,height=30)
+        self.result_address_name = tk.StringVar()
+        self.result_address = tk.Entry(self.dlg_setting,textvariable=self.result_address_name)
+        self.result_address.place(x=10,y=345,width=500,height=30)
+        self.result_address.insert(0,self.output_result_address)
+        #参照・チェックボタンを設置
+        btn_ref_5 = tk.Button(self.dlg_setting, text = "参照", font=("MSゴシック","15"),command = lambda: self.dlg_setting_ref(5))
+        btn_ref_5.place(x=520,y=345,height=30)
+        btn_chk_5 = tk.Button(self.dlg_setting, text = "確認", font=("MSゴシック","15"),command = lambda: self.dlg_setting_chk(5))
+        btn_chk_5.place(x=580,y=345,height=30)
+
         #注釈
         annotation_label_1 = tk.Label(self.dlg_setting,text="※アドレスのロットNo部分は %LOT% で指定",font=("MSゴシック","10"))
         annotation_label_2 = tk.Label(self.dlg_setting,text="※アドレスの品名部分は %PRODUCT% で指定",font=("MSゴシック","10"))
         annotation_label_1.pack()
-        annotation_label_1.place(x=10,y=230,height=20)
+        annotation_label_1.place(x=10,y=400,height=20)
         annotation_label_2.pack()
-        annotation_label_2.place(x=10,y=250,height=20)
+        annotation_label_2.place(x=10,y=420,height=20)
 
         #閉じるボタンを設置
         btn_close = tk.Button(self.dlg_setting, text = "閉じる", font=("MSゴシック","15"),command = self.dlg_setting_close)
-        btn_close.place(x=300,y=300,height=30)
+        btn_close.place(x=300,y=470,height=30)
 
         app.wait_window(self.dlg_setting)
 
@@ -379,6 +407,12 @@ class Application(tk.Frame):
             self.param_address.delete(0,tk.END)
             self.param_address.insert(0,address)
         elif n==3:
+            self.surf_result_address.delete(0,tk.END)
+            self.surf_result_address.insert(0,address)
+        elif n==4:
+            self.traydata_address.delete(0,tk.END)
+            self.traydata_address.insert(0,address)
+        elif n==5:
             self.result_address.delete(0,tk.END)
             self.result_address.insert(0,address)
 
@@ -391,8 +425,11 @@ class Application(tk.Frame):
         elif n==2:
             address = self.param_address_name.get()
         elif n==3:
+            address = self.surf_result_address_name.get()
+        elif n==4:
+            address = self.traydata_address_name.get()
+        elif n==5:
             address = self.result_address_name.get()
-        
         subprocess.Popen(["start",address],shell=True)
         return
     
@@ -410,6 +447,12 @@ class Application(tk.Frame):
             ini_file.write(output_line)
             output_line = "PARAMETER_ADDRESS,"+self.param_address_name.get()+"\n"
             self.parameter_address = self.param_address_name.get()
+            ini_file.write(output_line)
+            output_line = "SURF_RESULT_ADDRESS,"+self.surf_result_address_name.get()+"\n"
+            self.surf_resultfile_address = self.surf_result_address_name.get()
+            ini_file.write(output_line)
+            output_line = "TRAYDATA_ADDRESS,"+self.traydata_address_name.get()+"\n"
+            self.traydatafile_address = self.traydata_address_name.get()
             ini_file.write(output_line)
             output_line = "OUTPUT_RESULT_ADDRESS,"+self.result_address_name.get()+"\n"
             self.output_result_address = self.result_address_name.get()
@@ -511,17 +554,20 @@ class Application(tk.Frame):
 
         folder_address = filedialog.askdirectory(title="結果フォルダオープン",initialdir="./")
 
+        """textboxへロットNo書き込み"""
+        lot_no = folder_address.split("/")[-1]
+        self.log_text.delete("1.0","end")
+        self.log_text.insert(tk.END,"ロットNo：{}".format(lot_no))
+
         """tab2 画像用treeの更新"""
         self.now_result_folder = folder_address + "/"
-
         csv_files = glob.glob(folder_address+"/*.csv")
         result_file_address = ""
-
         for csv_file in csv_files:
             if "result_data" in csv_file:
                 result_file_address = csv_file
                 continue
-        
+
         if result_file_address == "":
             messagebox.showinfo("確認","resultファイルが見つかりません")
             return
@@ -1142,7 +1188,6 @@ class Application(tk.Frame):
     def click_clip_copy(self):
         """クリップボードに選択した項目をコピー"""
         selected_items = self.tree.selection()
-        print(selected_items)
         #クリップボードにコピーする文字列を取得
         input_line = ""
         for item in selected_items:
@@ -1165,8 +1210,20 @@ class Application(tk.Frame):
         lot_no_num = len(lot_no.split(","))
         type_name_num = len(type_name.split(","))
 
+        #テキストボックス初期化
+        self.log_text.delete("1.0","end")
+        #スタート時の日付を記入
+        self.log_text.insert(tk.END,"処理開始時刻：{}\n".format(datetime.datetime.now()))
+
+        #異常対応
         if lot_no_num != type_name_num:
-            print("機種名とロットNoの数があっていません")
+            self.log_text.insert(tk.END,"機種名とロットNoの数があっていません\n")
+            return
+        elif lot_no == "":
+            self.log_text.insert(tk.END,"ロットNoが入力されていません\n")
+            return
+        elif type_name == "":
+            self.log_text.insert(tk.END,"ロットNoが入力されていません\n")
             return
 
         if lot_no_num == 1:
@@ -1185,7 +1242,12 @@ class Application(tk.Frame):
         insp_test = insp()
 
         #setting.txtを読込
-        insp_test.read_setting_file(type_name,lot_no,self.test_sample_address,self.parameter_address,self.output_result_address)
+        n=insp_test.read_setting_file(type_name,lot_no,self.test_sample_address,self.parameter_address,self.output_result_address)
+
+        #settingファイル読み込み時のエラー
+        if n==1:
+            self.log_text.insert(tk.END,"ロット結果フォルダが既に存在しています\n")
+            return
 
         #分割情報,規格情報を取得
         if insp_test.STD_TYPE == "FIX":
@@ -1380,7 +1442,6 @@ class Application(tk.Frame):
             os.makedirs(insp_test.OUTPUT_ALL_IMAGE)
         if not os.path.exists(insp_test.OUTPUT_FAIL_IMAGE):
             os.makedirs(insp_test.OUTPUT_FAIL_IMAGE)
-
 
         for i,images in enumerate(test_images):
             #test_diff_image_listを初期化
