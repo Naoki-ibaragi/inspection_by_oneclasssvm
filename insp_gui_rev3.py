@@ -20,6 +20,7 @@ import datetime
 """複数条件の処理に対応可能なように変更"""
 VERSION_INFO = "4.1"
 DATE_INFO = "2023/8/15"
+MASSPRODUCTION_MODE = True
 
 class Application(tk.Frame):
     def __init__(self, master=None):
@@ -1225,7 +1226,7 @@ class Application(tk.Frame):
         elif type_name == "":
             self.log_text.insert(tk.END,"ロットNoが入力されていません\n")
             return
-
+        
         if lot_no_num == 1:
             self.main_process(lot_no,type_name,1)
         elif lot_no_num > 1:
@@ -1407,9 +1408,51 @@ class Application(tk.Frame):
         """
         #テストデータ読み込み
         print("テスト実施中")
-        test_image_files = glob.glob(insp_test.TEST_SAMPLE_FOLDER+"*AA.JPG")
-        test_num = len(test_image_files)
-        print("テスト画像数は{}枚です".format(test_num))
+
+        if MASSPRODUCTION_MODE == True:
+            """トレイデータ読み込み"""
+            traydata_info=[]
+            traydata_list = glob.glob(self.traydatafile_address.replace("%LOT%",lot_no)+lot_no+"*.csv")
+            for traydata_name in traydata_list:
+                traydata = open(traydata_name,"r")
+                traydata_line = traydata.readline()
+                n=0
+                while traydata_line:
+                    if n>0:
+                        data = traydata_line.split(",")
+                        #serial,tray番号,trayX,trayY
+                        data_list = [data[0],data[1],data[3],data[4]]
+                        traydata_info.append(data_list)
+                    traydata_line = traydata.readline()
+                    n+=1
+
+            """resultファイル読み込み"""
+            test_image_files = []
+            serial_list = []
+            surf_result_name = self.surf_resultfile_address.replace("%LOT%",lot_no)+"result1_"+lot_no+"_Vision1.csv"
+            surf_result_file = open(surf_result_name,"r")
+            result_line = surf_result_file.readline()
+            n=0
+            while result_line:
+                if n>6:
+                    data = result_line.split(",")
+
+                    if data[1] == "0":
+                        serial = data[4]
+                        num = int(data[0])
+                        imgname = insp_test.TEST_SAMPLE_FOLDER + "%05d"%num+"AA.jpg"
+                        serial_list.append(serial)
+                        test_image_files.append(imgname) 
+
+                result_line = surf_result_file.readline()
+                n=n+1
+            
+            test_num=len(test_image_files)
+            print("テスト画像数は{}枚です".format(test_num))
+        else:
+            test_image_files = glob.glob(insp_test.TEST_SAMPLE_FOLDER+"*AA.JPG")
+            test_num = len(test_image_files)
+            print("テスト画像数は{}枚です".format(test_num))
 
         #ONE_TEST_SIZE区切りの2次元配列に変換
         test_images=[]
