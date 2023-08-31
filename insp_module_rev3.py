@@ -545,7 +545,7 @@ class insp:
         if mode==0:
             #テスト時
             self.theta_list.append([theta,x,y,w,h])
-            img_name = self.OUTPUT_ALL_IMAGE+img_path.split("\\")[-1].split(".")[0]+".jpg"
+            img_name = self.OUTPUT_ALL_IMAGE+img_path.split("/")[-1].split(".")[0]+".jpg"
             cv2.imwrite(img_name,img)
             print("\r{}枚目 {}を処理中".format(n,img_path),end="")
         elif mode==1:

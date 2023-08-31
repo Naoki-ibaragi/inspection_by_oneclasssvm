@@ -18,9 +18,12 @@ import datetime
 
 """VERSION 4.1"""
 """複数条件の処理に対応可能なように変更"""
-VERSION_INFO = "4.1"
-DATE_INFO = "2023/8/15"
+"""VERSION 5.1"""
+"""トレイデータ・外観結果ファイル読み込みモードに対応"""
+VERSION_INFO = "5.1"
+DATE_INFO = "2023/8/31"
 MASSPRODUCTION_MODE = True
+YIELD_STANDARD = 0.98
 
 class Application(tk.Frame):
     def __init__(self, master=None):
@@ -918,10 +921,8 @@ class Application(tk.Frame):
         result_line = result_file.readline()
         n = 0
         while result_line:
-
             if n >=3:
                 result_data = result_line.split(",")
-
                 img_name = result_data[0]
                 pass_fail = result_data[1]
                 id_tmp=self.tree.insert("","end",values=(n-2,img_name,pass_fail))
@@ -994,7 +995,7 @@ class Application(tk.Frame):
         return
 
     def on_graph_tree_select(self,event):
-        """tab3の表wを選択したときの処理""" 
+        """tab3の表を選択したときの処理""" 
         """グラフを表示"""
 
         #canvasの初期化
@@ -1105,7 +1106,6 @@ class Application(tk.Frame):
 
         #再canvasの再表示
         #self.remake_canvas()
-
         for item in self.tree.selection():
             item_text = self.tree.item(item,"values")
 
@@ -1199,6 +1199,192 @@ class Application(tk.Frame):
 
         return
 
+    def create_popup(self,traydata_list,serial_list,image_list,pass_fail_list,lot_no):
+        """低歩留まり時に結果書き換え用のウインドウをオープン"""
+        """結果書き換え⇒データ出力"""
+
+        self.lot_no = lot_no
+        self.traydata = traydata_list
+        self.serial_list = serial_list
+        self.pass_fail_list = pass_fail_list
+        #window作成
+        self.check_window = tk.Toplevel(self.master)
+        self.check_window.title("Pass/Fail書き換え")
+        self.check_window.geometry("680x450")
+        self.check_window.protocol("WM_DELETE_WINDOW",(lambda: "pass")())
+        self.check_window.focus_set()
+        self.check_window.transient(self.master)
+
+        #ラベル表示
+        check_label = tk.Label(self.check_window,text="Fail画像を確認して結果の書き換えを実施してください",font=("MSゴシック","9"))
+        check_label.pack()
+        check_label.place(x=10,y=10,height=20)
+
+        #表を作成
+        column = (0,1,2,3,4,5)
+        self.result_tree=ttk.Treeview(self.check_window, columns=column,show="headings")
+        self.result_tree.bind("<<TreeviewSelect>>",self.on_result_tree_select)
+        self.result_tree.column(0,width=65,anchor="center")
+        self.result_tree.column(1,width=65,anchor="center")
+        self.result_tree.column(2,width=200,anchor="center")
+        self.result_tree.column(3,width=150,anchor="center")
+        self.result_tree.column(4,width=65,anchor="center")
+        self.result_tree.column(5,width=65,anchor="center")
+        self.result_tree.heading(0,text="P/F")
+        self.result_tree.heading(1,text="シリアル")
+        self.result_tree.heading(2,text="画像名")
+        self.result_tree.heading(3,text="トレイ番号")
+        self.result_tree.heading(4,text="トレイX")
+        self.result_tree.heading(5,text="トレイY")
+
+        x_set = 10
+        y_set = 10
+        height = 350
+        self.result_tree.place(x=x_set,y=y_set,height=height)
+        #スクロールバー
+        vsb = ttk.Scrollbar(self.check_window,orient="vertical",command=self.result_tree.yview)
+        vsb.place(x=x_set+610,y=y_set,height=height)
+        self.result_tree["yscrollcommand"]=vsb.set
+        #最後に確認ボタンを設置
+        btn_complete = tk.Button(self.check_window, text = "目視確認完了",font=("bold"),foreground="blue",command = self.click_complete)
+        btn_complete.place(x=250,y=y_set+height+20,height=30)
+
+        #pass->fail, fail->passの変更履歴をログに残す
+        self.change_log=[]
+        #result_treeに記載する項目を作成
+        #P/F,serial,image_name,trayname,trayx,trayy
+        self.result_id_list = dict()
+        for i in range(len(serial_list)):
+            pf = pass_fail_list[i]
+            serial = serial_list[i]
+            img_address = image_list[i]
+
+            #traydata_listにおける目的serialのインデックスを出す
+            index_num = [x[0] for x in traydata_list].index(serial)
+            tray_name = traydata_list[index_num][1]
+            tray_x = traydata_list[index_num][2]
+            tray_y = traydata_list[index_num][3]
+
+            id_tmp = self.result_tree.insert("","end",values=(pf,serial,img_address,tray_name,tray_x,tray_y))
+            self.result_id_list[id_tmp] = [pf,serial,img_address,tray_name,tray_x,tray_y]
+
+    def on_result_tree_select(self,event):
+        #pass/failの書き換え確認
+        #複数項目が来た場合はリターンする
+        if len(self.result_tree.selection())>1:
+            messagebox.showinfo("確認","1つの項目だけ選択してください")
+            return
+        
+        item_text = self.result_tree.item(self.result_tree.selection(),"values")
+        #エラー回避用
+        if item_text == "":
+            return
+        item_id = self.result_tree.focus()
+        if item_text[0] == "Fail":
+            tmp_list = self.result_id_list.copy()
+            tmp_list[item_id][0] = "Pass"
+            self.change_log.append([item_text[1],"Pass to Fail"])
+            ret = messagebox.askyesno("確認","Fail->Passへの変更を実施しますか？")
+
+            if ret:
+                #pass_fail_listの書き換え
+                serial = item_text[1]
+                self.pass_fail_list[self.serial_list.index(serial)] = "Pass"
+
+        elif item_text[0] == "Pass": 
+            tmp_list = self.result_id_list.copy()
+            tmp_list[item_id][0] = "Fail"
+            self.change_log.append([item_text[1],"Fail to Pass"])
+            ret = messagebox.askyesno("確認","Pass->Failへの変更を実施しますか？")
+            if ret:
+                #pass_fail_listの書き換え
+                serial = item_text[1]
+                self.pass_fail_list[self.serial_list.index(serial)] = "Fail"
+
+        if ret==True:
+            #treeの更新
+            #まず全て削除
+            for key in self.result_id_list:
+                self.result_tree.delete(key)
+
+            self.result_id_list = dict()
+
+            for key in tmp_list:
+                id_tmp = self.result_tree.insert("","end",values=tuple(tmp_list[key]))
+                self.result_id_list[id_tmp] = tmp_list[key]
+            
+            print("変更完了!")
+
+            return
+        else:
+            return
+
+    def click_complete(self):
+        #目視確認が確認したことを確認
+        ret = messagebox.askyesno("確認","目視確認を完了しますか？")
+
+        if ret==True:
+            #パス・フェイル書き換えログ出力
+            print("Logファイルを出力します")
+            outputfilename=self.output_result_address.replace("%LOT%",self.lot_no)+"change_log.txt"
+            outputfile = open(outputfilename,"w")
+
+            if len(self.change_log)==0:
+                outputfile.write("no change log")
+            for log in self.change_log:
+                for log in self.change_log:
+                    outputline = ",".join(log)+"\n"
+                    outputfile.write(outputline)
+            outputfile.close()
+
+            #トレイデータ出力
+            print("トレイデータを出力します")
+            self.output_traydata()
+            print("出力完了")
+
+            self.check_window.destroy()
+            return
+        else:
+            return
+
+    def output_traydata(self):
+        #トレイデータ出力
+        if not os.path.exists(self.output_result_address.replace("%LOT%",self.lot_no)+"output_traydata/"):
+            os.makedirs(self.output_result_address.replace("%LOT%",self.lot_no)+"output_traydata/")
+        
+        traydata_list = traydata_list = glob.glob(self.traydatafile_address.replace("%LOT%",self.lot_no)+self.lot_no+"*.csv")
+
+        for trayfilename in traydata_list:
+            output_traydata_address = self.output_result_address.replace("%LOT%",self.lot_no)+"output_traydata/"+trayfilename.split("\\")[-1]
+
+            basefile = open(trayfilename,"r")
+            outputfile = open(output_traydata_address,"w")
+
+            baseline = basefile.readline()
+            n=0
+            while baseline:
+                if n==0:
+                    outputfile.write(baseline)
+                elif n>=1:
+                    data=baseline.split(",")
+                    serial = data[0]
+                    pf = self.pass_fail_list[self.serial_list.index(serial)]
+
+                    if pf == "Pass":
+                        data[2] = "0"
+                        outputline = ",".join(data)
+                        outputfile.write(outputline)
+                    elif pf == "Fail":
+                        data[2] = "F"
+                        outputline = ",".join(data)
+                        outputfile.write(outputline)
+
+                baseline = basefile.readline()
+                n+=1
+
+            basefile.close()
+            outputfile.close()
+        return
     #---------------------------#
     #メイン処理                 #
     #---------------------------#
@@ -1407,10 +1593,11 @@ class Application(tk.Frame):
         
         """
         #テストデータ読み込み
-        print("テスト実施中")
+        print("テスト画像読み込み開始")
 
         if MASSPRODUCTION_MODE == True:
             """トレイデータ読み込み"""
+            print("トレイデータ読み込み")
             traydata_info=[]
             traydata_list = glob.glob(self.traydatafile_address.replace("%LOT%",lot_no)+lot_no+"*.csv")
             for traydata_name in traydata_list:
@@ -1420,33 +1607,41 @@ class Application(tk.Frame):
                 while traydata_line:
                     if n>0:
                         data = traydata_line.split(",")
-                        #serial,tray番号,trayX,trayY
-                        data_list = [data[0],data[1],data[3],data[4]]
-                        traydata_info.append(data_list)
+                        #PATでNGになっているものは見ない
+                        if data[2] == "0":
+                            #serial,tray番号,trayX,trayY
+                            data_list = [data[0],data[1],data[3],data[4]]
+                            traydata_info.append(data_list)
                     traydata_line = traydata.readline()
                     n+=1
+                traydata.close()
 
             """resultファイル読み込み"""
+            print("インライン外観検査result読み込み")
             test_image_files = []
             serial_list = []
             surf_result_name = self.surf_resultfile_address.replace("%LOT%",lot_no)+"result1_"+lot_no+"_Vision1.csv"
             surf_result_file = open(surf_result_name,"r")
             result_line = surf_result_file.readline()
-            n=0
+            n=1
             while result_line:
-                if n>6:
+                if n>=7:
                     data = result_line.split(",")
-
+                    #Bin 0 良品のみ取り出し
                     if data[1] == "0":
                         serial = data[4]
-                        num = int(data[0])
-                        imgname = insp_test.TEST_SAMPLE_FOLDER + "%05d"%num+"AA.jpg"
-                        serial_list.append(serial)
-                        test_image_files.append(imgname) 
-
+                        #serialがPAT NG出ないことを確認
+                        if serial in [x[0] for x in traydata_info]:
+                            num = int(data[0])-1 #画像ファイル名はnum-1を5桁表示したものになっている
+                            imgname = insp_test.TEST_SAMPLE_FOLDER + "%05d"%num+"AA.jpg"
+                            if not os.path.exists(imgname):
+                                print("{}が存在しません".format(imgname))
+                                return
+                            serial_list.append(serial)
+                            test_image_files.append(imgname) 
                 result_line = surf_result_file.readline()
                 n=n+1
-            
+            surf_result_file.close() 
             test_num=len(test_image_files)
             print("テスト画像数は{}枚です".format(test_num))
         else:
@@ -1497,7 +1692,7 @@ class Application(tk.Frame):
                 #画像をopencvで読み込み、リストに入れる
                 img_test = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
                 test_image_list.append(img_test)
-                test_image_name.append(image.split("\\")[-1].split(".")[0]) #result_data.csvに表示用
+                test_image_name.append(image.split("/")[-1].split(".")[0]) #result_data.csvに表示用
                 img_name_list.append(image) #terminalに表示用
             for j,image in enumerate(test_image_list):
                 '''複数フィルターに対応できるように変更'''
@@ -1533,16 +1728,11 @@ class Application(tk.Frame):
             output_predictions.append(np.array(predictions[j]).T)
         del predictions
         gc.collect()
-        #result出力用に転置する
-        #output_predictions = np.array(predictions).T
 
         '''結果出力'''
         output_file = open(insp_test.OUTPUT_RESULT_FILE,"w")
         #header出力
         output_line = "standards,,,,,,,"
-        #for i,s in enumerate(split_num):
-        #    for j in range(s):
-        #        output_line+=","
         for i,s in enumerate(split_num):
             for j in range(s):
                 output_line+=str(standards[i][j])+","
@@ -1550,9 +1740,6 @@ class Application(tk.Frame):
         output_file.write(output_line)
         output_file.write("\n")
         output_line = "no,p/f,theta,x,y,w,h,"
-        #for i,s in enumerate(split_num):
-        #    for j in range(s):
-        #        output_line+=str(i+1)+"_"+str(j+1)+","
         for i,s in enumerate(split_num):
             for j in range(s):
                 output_line+=str(i+1)+"_"+str(j+1)+","
@@ -1562,6 +1749,7 @@ class Application(tk.Frame):
         #メイン結果出力
         fail_num = 0
         pass_num = 0
+        pass_fail_list=[]
         for i in range(test_num): #テスト数
             flag=0
             for j in range(len(split_num)): #分割数
@@ -1570,9 +1758,11 @@ class Application(tk.Frame):
             if flag==1:    
                 output_line = test_image_name[i]+","+"f"+","+str(insp_test.theta_list[i][0])+","+str(insp_test.theta_list[i][1])+","+str(insp_test.theta_list[i][2])+","+str(insp_test.theta_list[i][3])+","+str(insp_test.theta_list[i][4])+","
                 fail_num += 1
+                pass_fail_list.append("Fail")
             else:
                 output_line = test_image_name[i]+","+"p"+","+str(insp_test.theta_list[i][0])+","+str(insp_test.theta_list[i][1])+","+str(insp_test.theta_list[i][2])+","+str(insp_test.theta_list[i][3])+","+str(insp_test.theta_list[i][4])+","
                 pass_num += 1
+                pass_fail_list.append("Pass")
 
             #各矩形のp/f(0/1)出力
             #for j in range(len(split_num)): #分割数
@@ -1588,13 +1778,26 @@ class Application(tk.Frame):
             output_file.write(output_line)
 
         output_file.close()
-        print("良品数は{}、不良品数は{}".format(pass_num,fail_num))
-        print("正常終了")
+        print("良品数は{}、不良品数は{}、歩留まりは{}%".format(pass_num,fail_num,pass_num*100/(pass_num+fail_num)))
 
-        if test_mode == 1:
-            #処理ロットが1つであればポップアップ表示と解析用の処理をする
-            messagebox.showinfo("確認","処理が正常に終了しました\n良品数は{}、不良品数は{}".format(pass_num,fail_num))
+        if MASSPRODUCTION_MODE==True and pass_num/(pass_num+fail_num) < YIELD_STANDARD:
+            print("歩留まりが低いです\n不良チップの目視確認をお願いします")
+            messagebox.showinfo("確認","目視確認を実施してください\n良品数は{}、不良品数は{}".format(pass_num,fail_num))
             self.result_analysis(type_name,lot_no)
+            print("目視確認用ポップアップを表示します")
+            self.create_popup(traydata_info,serial_list,test_image_files,pass_fail_list,lot_no)
+        elif MASSPRODUCTION_MODE==True and pass_num/(pass_num+fail_num)>=YIELD_STANDARD:
+            if test_mode == 1:
+                #処理ロットが1つであればポップアップ表示と解析用の処理をする
+                messagebox.showinfo("確認","処理が正常に終了しました\n良品数は{}、不良品数は{}".format(pass_num,fail_num))
+                self.result_analysis(type_name,lot_no)
+            print("トレイデータ書き出し")
+            self.lot_no = lot_no
+            self.traydata = traydata_info
+            self.serial_list = serial_list
+            self.pass_fail_list = pass_fail_list
+            self.output_traydata()
+            print("正常終了")
 
         return
 
