@@ -340,7 +340,6 @@ class insp:
 
         #a_b_list
         #0->top, 1->right, 2->bottom, 3->left
-
         #チップを回転させた画像を取得
         lt= np.zeros(2,dtype=int)
         rt= np.zeros(2,dtype=int)
@@ -378,8 +377,10 @@ class insp:
         h = max([lt[1],rt[1],rb[1],lb[1]]) - y
 
         if (w<self.CHIP_SIZE_CHK_1 or w>self.CHIP_SIZE_CHK_2) or (h<self.CHIP_SIZE_CHK_1 or h>self.CHIP_SIZE_CHK_2):
+            #チップの外形が明らかにおかしい場合処理を止める
             print("チップの外形がおかしいです")
-            sys.exit()
+            print("幅{}、高さ{}".format(w,h))
+            return 0,0
 
         img_slice = img[y-self.PADDING_Y*2:y+h+self.PADDING_Y*2,x-self.PADDING_X*2:x+w+self.PADDING_X*2]
 
@@ -534,6 +535,10 @@ class insp:
 
         a_b_list = self.get_line(image,self.rectangle_point)
         img_affine,theta= self.get_rotate_image(image,a_b_list)
+        if img_affine==0:
+            #チップの位置補正に失敗した場合はreturn 0する
+            return 0
+
         img,x,y,w,h = self.get_chip_image(img_affine,0)
 
         #お手本との輝度合わせを実施する

@@ -20,9 +20,11 @@ import datetime
 """複数条件の処理に対応可能なように変更"""
 """VERSION 5.1"""
 """トレイデータ・外観結果ファイル読み込みモードに対応"""
-VERSION_INFO = "5.1"
-DATE_INFO = "2023/8/31"
-MASSPRODUCTION_MODE = True
+"""VERSION 5.2"""
+"""位置補正に失敗した場合に処理を続行できるように変更"""
+VERSION_INFO = "5.2"
+DATE_INFO = "2023/9/1"
+MASSPRODUCTION_MODE = False
 YIELD_STANDARD = 0.98
 
 class Application(tk.Frame):
@@ -1675,6 +1677,9 @@ class Application(tk.Frame):
         for n in split_num:
             predictions.append([[] for i in range(n)])
 
+        #問題無く位置補正出来ているかをリストに収納
+        success_get_chip_image=[0 for i in range(test_num)]
+        
         #画像出力用フォルダ作成
         if not os.path.exists(insp_test.OUTPUT_ALL_IMAGE):
             os.makedirs(insp_test.OUTPUT_ALL_IMAGE)
