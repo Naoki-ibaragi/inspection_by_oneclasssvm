@@ -40,6 +40,9 @@ class insp:
         self.FILTER_LIST=[]
         self.FILTER_PARAM = []
 
+        #問題無く位置補正出来ているかをリストに収納 23/9/2追加
+        self.success_get_chip_image=[]
+
         self.GOOD_SAMPLE_FOLDER="C:/workspace/insp_by_oneclasssvm_ver2/good_sample/" #良品画像が入ったフォルダ
         self.PARENT_IMG_FILE="C:/workspace/insp_by_oneclasssvm_ver2/00000AA.JPG" #良品画像が入ったフォルダ
         self.TEST_SAMPLE_FOLDER="C:/workspace/insp_by_oneclasssvm_ver2/test_sample/" #テスト画像が入ったフォルダ
@@ -71,7 +74,6 @@ class insp:
 
         #各フォルダの設定
         self.GOOD_SAMPLE_FOLDER=parameter_folder+"good_sample/" #良品画像が入ったフォルダ
-        self.PARENT_IMG_FILE=parameter_folder+"parent_img.JPG" #良品画像が入ったフォルダ
 
         #outputFolder
         self.GOOD_RESULT_FILE = parameter_folder + "good_data.csv"
@@ -116,6 +118,10 @@ class insp:
                 self.DILATE_NUM = int(setting_item[1])
             elif setting_item[0] == "ONE_TEST_SIZE":
                 self.ONE_TEST_SIZE = int(setting_item[1])
+            elif setting_item[0] == "PROCESS_PARENT_IMAGE":
+                self.PROCESS_PARENT_IMAGE = int(setting_item[1])
+            elif setting_item[0] == "PARENT_IMAGE_NAME":
+                self.PARENT_IMG_FILE=parameter_folder+setting_item[1] #親画像
             elif setting_item[0] == "NU":
                 self.NU = float(setting_item[1])
             elif setting_item[0] == "GAMMA":
@@ -204,12 +210,19 @@ class insp:
         #チップの辺を取得するための2値化レベル
         threshold = self.CHIP_THRESHOLD
 
+        #ノイズ除去
+        kernel = np.ones((5,5),np.uint8)
+        _,img = cv2.threshold(img,threshold,255,cv2.THRESH_BINARY)
+        img = cv2.erode(img,kernel,iterations=self.ERODE_NUM)
+        img = cv2.dilate(img,kernel,iterations=self.DILATE_NUM)
+
         #top->right->bottom->leftでループを回す
         for n,p in enumerate(rp):
 
             #矩形画像切り出し
             img_slice = img[p[0][1]:p[1][1],p[0][0]:p[1][0]]
-            img_slice = img_slice > threshold
+            #img_slice = img_slice > threshold
+            img_slice = img_slice==255
 
             px = []
             py = []
@@ -380,31 +393,39 @@ class insp:
             #チップの外形が明らかにおかしい場合処理を止める
             print("チップの外形がおかしいです")
             print("幅{}、高さ{}".format(w,h))
-            return 0,0
+            return 0,180
 
         img_slice = img[y-self.PADDING_Y*2:y+h+self.PADDING_Y*2,x-self.PADDING_X*2:x+w+self.PADDING_X*2]
-
+        #debug 23/09/03
+        cv2.imwrite(self.OUTPUT_ALL_IMAGE+"img_slice.jpg",img_slice)
         center = np.array([x+w/2,y+h/2])
 
         #左上の角度を求める
         center2chipLT = lt - center
         center2rectLT = np.array([x,y]) - center
-
-        thetaLT = np.arccos(np.dot(center2chipLT,center2rectLT)/(np.linalg.norm(center2chipLT)*np.linalg.norm(center2rectLT)))
+        thetaLT = np.degrees(np.arccos(np.dot(center2chipLT,center2rectLT)/(np.linalg.norm(center2chipLT)*np.linalg.norm(center2rectLT))))
+        #外積でベクトルの向きを判定
+        #if np.cross(center2chipLT,center2rectLT)<0:
+        #    thetaLT = thetaLT*-1
 
         #右下の角度を求める
         center2chipRB = rb - center
         center2rectRB = np.array([x+w,y+h]) - center
+        thetaRB = np.degrees(np.arccos(np.dot(center2chipRB,center2rectRB)/(np.linalg.norm(center2chipRB)*np.linalg.norm(center2rectRB))))
+        #外積でベクトルの向きを判定
+        #if np.cross(center2chipRB,center2rectRB)<0:
+        #    thetaRB = thetaRB*-1
 
-        thetaRB = np.arccos(np.dot(center2chipRB,center2rectRB)/(np.linalg.norm(center2chipRB)*np.linalg.norm(center2rectRB)))
-
-        #角度は2つの角度を比較して小さいほうを取る
+        #角度は2つの角度の平均を取る
         #theta = min(thetaLT,thetaRB)
         theta = (thetaLT+thetaRB)/2
 
-        rot_matrix = cv2.getRotationMatrix2D((w/2,h/2),np.degrees(theta),1)
+        #rot_matrix = cv2.getRotationMatrix2D((w/2,h/2),np.degrees(theta),1)
+        rot_matrix = cv2.getRotationMatrix2D((w/2,h/2),theta,1)
 
         img_affine = cv2.warpAffine(img_slice,rot_matrix,(w+self.PADDING_X*2,h+self.PADDING_Y*2))
+        #debug 23/09/03
+        cv2.imwrite(self.OUTPUT_ALL_IMAGE+"img_affine.jpg",img_affine)
 
         return img_affine,theta
 
@@ -531,13 +552,22 @@ class insp:
     #差分を取得する
     def get_diff_image_list(self,img_good_average,image,brightness_data,n,mode,img_path):
         '''FILTERが複数の場合に対応 23/8/16'''
+        '''位置補正に失敗した場合の対応を追加 23/9/2'''
         diff_image_list=[[] for i in range(len(self.FILTER_LIST))] #最終結果を入れるリスト
 
         a_b_list = self.get_line(image,self.rectangle_point)
         img_affine,theta= self.get_rotate_image(image,a_b_list)
-        if img_affine==0:
-            #チップの位置補正に失敗した場合はreturn 0する
+
+        if theta==180:
+            #チップの位置補正に失敗した場合の処理
+            self.success_get_chip_image.append(False)
+            self.theta_list.append(["f","f","f","f","f"])
+            img_name = self.OUTPUT_ALL_IMAGE+img_path.split("/")[-1].split(".")[0]+".jpg"
+            cv2.imwrite(img_name,image)
+            print("\r{}枚目 {}の位置補正に失敗しました".format(n,img_path),end="")
             return 0
+        else:
+            self.success_get_chip_image.append(True)
 
         img,x,y,w,h = self.get_chip_image(img_affine,0)
 
@@ -549,10 +579,13 @@ class insp:
 
         if mode==0:
             #テスト時
-            self.theta_list.append([theta,x,y,w,h])
-            img_name = self.OUTPUT_ALL_IMAGE+img_path.split("/")[-1].split(".")[0]+".jpg"
-            cv2.imwrite(img_name,img)
             print("\r{}枚目 {}を処理中".format(n,img_path),end="")
+            self.theta_list.append([theta,x,y,w,h])
+            #img_name = self.OUTPUT_ALL_IMAGE+img_path.split("/")[-1].split(".")[0]+".jpg" #for linux
+            img_name = self.OUTPUT_ALL_IMAGE+img_path.split("\\")[-1].split(".")[0]+".jpg" #for windows
+            write_status=cv2.imwrite(img_name,img)
+            if not write_status is True:
+                print("{}のall_imageへの書き込みに失敗しました".format(img_name))
         elif mode==1:
             #良品学習時
             print("\r{}枚目 {}を処理中".format(n,img_path),end="")
@@ -582,7 +615,6 @@ class insp:
 
                 img_diff = cv2.absdiff(test_image,tmp_image_match)
 
-                #diff_image_list[i].append((img_diff/255).flatten()) #diff imageを0~1に正規化
                 diff_image_list[i].append((img_diff).flatten()) #省メモリのために正規化を後で行う
 
         return diff_image_list
@@ -627,16 +659,21 @@ class insp:
         return results
 
     #テスト画像のスコアを計算
-    def result_predict(self,models,test_diff_image_list,split_num):
+    def result_predict(self,models,test_diff_image_list,success_list):
         """複数フィルターに対応できるように変更 23/08/16"""
+        '''位置情報取得に失敗した場合にも対応できるように変更 23/09/02'''
         results=[[] for i in range(len(test_diff_image_list))]
 
-        #test_features -> フィルター数 X split_num X テスト数
+        #test_features -> フィルター数 X split_num X テスト数(位置情報を取得できたもののみ)
         for i,features_per_filter in enumerate(test_diff_image_list):
             for j,features in enumerate(features_per_filter):
                 features = np.array(features)/255
                 result = models[i][j].score_samples(features)
                 result_list = result.tolist()
+                #位置情報を取得できなかった画像には0を入れる
+                for k,s in enumerate(success_list):
+                    if s==False:
+                        result_list.insert(k,0)
                 results[i].append(result_list)
 
         return results
@@ -673,6 +710,8 @@ class insp:
 
         for i,test_scores_per_filter in enumerate(test_scores):
             for score in test_scores_per_filter:
+                #位置情報失敗した場合の値0のスコアを削除する
+                score = [x for x in score if x!=0]
                 med = np.median(score) #良品学習スコアの内最小値を規格に置く
                 std = np.std(score)
                 standard = med-self.STD_COEFF[i]*std
@@ -682,8 +721,8 @@ class insp:
 
     def judge_pass_fail(self,standards,test_predictions,test_num,test_image_name):
         """複数フィルターに対応できるように変更 23/08/16"""
+        """位置補正失敗した場合に対応できるように変更 23/09/02"""
         #predictionsはフィルター数 X split_num X テストサンプル数
-
         judge_result=[]
         for i in range(len(test_predictions)):
             judge_result.append([[] for i in range(test_num)]) #フィルター数Xサンプル数のリストを作成
@@ -701,7 +740,7 @@ class insp:
         fail_image_list = [[] for i in range(test_num)] 
         for i,result_per_filter in enumerate(judge_result):
             for j,result in enumerate(result_per_filter):
-                if "1" in result:
+                if "1" in result and self.success_get_chip_image[j]==True:
                     for k,r in enumerate(result):
                         if r=="1":
                             x1 = self.SPLIT_DATA[i][k][0] #矩形左上 X

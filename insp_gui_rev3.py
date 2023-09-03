@@ -1119,6 +1119,9 @@ class Application(tk.Frame):
         elif item_text[2] == "f":
             img_address = self.now_result_folder + "fail_image/"+img_name
             self.set_image(img_address)
+        elif item_text[2] == "n":
+            img_address = self.now_result_folder + "fail_image/"+img_name
+            self.set_image(img_address)
 
         return 
     
@@ -1458,14 +1461,19 @@ class Application(tk.Frame):
         良品学習実施
         """
         #初めにお手本画像を作成する
-        img_good_average = insp_test.get_parent_img(insp_test.PARENT_IMG_FILE)
+        if insp_test.PROCESS_PARENT_IMAGE == 1:
+            img_good_average = insp_test.get_parent_img(insp_test.PARENT_IMG_FILE)
+            #加工後の画像を出力する
+            cv2.imwrite(self.parameter_address.replace("%LOT%",lot_no).replace("%PRODUCT%",type_name)+"parent_img_after_processing.jpg",img_good_average)
+        else:
+            img_good_average = cv2.imread(insp_test.PARENT_IMG_FILE,cv2.IMREAD_GRAYSCALE)
 
         #お手本画像との輝度合わせ用にデータを取得
         mean_good = img_good_average.mean()
         std_good = img_good_average.std()
         brightness_data = [mean_good,std_good]
 
-        #お手本にフィルターをかける
+        #お手本にフィルターをかける(リストになる)
         img_good_average = insp_test.image_filter(img_good_average)
 
         #プロセスタイプによって分岐 1->良品条件出し込みの全処理 2->良品条件出しのみ
@@ -1676,9 +1684,6 @@ class Application(tk.Frame):
         predictions=[]
         for n in split_num:
             predictions.append([[] for i in range(n)])
-
-        #問題無く位置補正出来ているかをリストに収納
-        success_get_chip_image=[0 for i in range(test_num)]
         
         #画像出力用フォルダ作成
         if not os.path.exists(insp_test.OUTPUT_ALL_IMAGE):
@@ -1689,6 +1694,8 @@ class Application(tk.Frame):
         for i,images in enumerate(test_images):
             #test_diff_image_listを初期化
             test_diff_image_list = []
+            #位置情報取得に成功したかを入れるリストを初期化
+            success_get_chip_image_onetestsize=[]
             for m in range(len(split_num)):
                 test_diff_image_list.append([[] for s in range(split_num[m])])
             test_image_list=[] #opencvで開いた画像を入れる
@@ -1697,17 +1704,39 @@ class Application(tk.Frame):
                 #画像をopencvで読み込み、リストに入れる
                 img_test = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
                 test_image_list.append(img_test)
-                test_image_name.append(image.split("/")[-1].split(".")[0]) #result_data.csvに表示用
+                #test_image_name.append(image.split("/")[-1].split(".")[0]) #result_data.csvに表示用 #for linux
+                test_image_name.append(image.split("\\")[-1].split(".")[0]) #result_data.csvに表示用 #for windows
                 img_name_list.append(image) #terminalに表示用
             for j,image in enumerate(test_image_list):
                 '''複数フィルターに対応できるように変更'''
+                '''位置補正に失敗した場合に対応 23/9/2'''
                 diff_image_list = insp_test.get_diff_image_list(img_good_average,image,brightness_data,i*insp_test.ONE_TEST_SIZE+j+1,0,img_name_list[j])
+                if diff_image_list == 0:
+                    success_get_chip_image_onetestsize.append(False)
+                    '''位置補正失敗した場合はtest_diff_image_listに入れない'''
+                    continue
+                success_get_chip_image_onetestsize.append(True)
                 for k,s in enumerate(split_num):
                     for l in range(s):
                         test_diff_image_list[k][l].append(diff_image_list[k][l]) #フィルターの数 X ONE_TEST_SIZE枚分の差分ベクトル
 
             #テストデータをつかってone-class-svmのスコア取得
-            results = insp_test.result_predict(models,test_diff_image_list,split_num)
+            if len(test_diff_image_list[0]) == 0:
+                '''全ての画像の位置情報取得に失敗した場合の分岐を追加 23/09/02'''
+                #スコアが0のリストを結果とする
+                result_list = [0 for x in range(len(success_get_chip_image_onetestsize))]
+
+                #predictionsに総テスト結果を入れていく
+                for k,s in enumerate(split_num): #フィルターの種類の数
+                    for l in range(s): #分割の数
+                        predictions[k][l] += result_list
+
+                #リスト初期化、メモリ開放
+                del test_image_list
+                del test_diff_image_list
+                continue
+
+            results = insp_test.result_predict(models,test_diff_image_list,success_get_chip_image_onetestsize)
 
             #predictionsに総テスト結果を入れていく
             for k,s in enumerate(split_num): #フィルターの種類の数
@@ -1720,6 +1749,11 @@ class Application(tk.Frame):
 
         print("\n画像評価完了")
         print("判定中")
+
+        #全ての位置情報取得に失敗した場合
+        if insp_test.success_get_chip_image.count(False)==test_num:
+            print("全ての画像の位置情報取得に失敗しました")
+            return
 
         #PATモードの場合
         if self.process_mode == 3 and insp_test.STD_TYPE != "FIX":
@@ -1754,16 +1788,25 @@ class Application(tk.Frame):
         #メイン結果出力
         fail_num = 0
         pass_num = 0
+        unknown_num = 0
         pass_fail_list=[]
         for i in range(test_num): #テスト数
             flag=0
-            for j in range(len(split_num)): #分割数
-                if "1" in judge_results[j][i]:
-                    flag=1
+            if insp_test.success_get_chip_image[i]==False:
+                flag=2
+            elif insp_test.success_get_chip_image[i]==True:
+                for j in range(len(split_num)): #分割数
+                    if "1" in judge_results[j][i]:
+                        flag=1
             if flag==1:    
                 output_line = test_image_name[i]+","+"f"+","+str(insp_test.theta_list[i][0])+","+str(insp_test.theta_list[i][1])+","+str(insp_test.theta_list[i][2])+","+str(insp_test.theta_list[i][3])+","+str(insp_test.theta_list[i][4])+","
                 fail_num += 1
                 pass_fail_list.append("Fail")
+            elif flag==2:
+                #位置情報取得失敗の未確認画像用の出力
+                output_line = test_image_name[i]+","+"n"+","+str(insp_test.theta_list[i][0])+","+str(insp_test.theta_list[i][1])+","+str(insp_test.theta_list[i][2])+","+str(insp_test.theta_list[i][3])+","+str(insp_test.theta_list[i][4])+","
+                unknown_num += 1
+                pass_fail_list.append("UNKNOWN")
             else:
                 output_line = test_image_name[i]+","+"p"+","+str(insp_test.theta_list[i][0])+","+str(insp_test.theta_list[i][1])+","+str(insp_test.theta_list[i][2])+","+str(insp_test.theta_list[i][3])+","+str(insp_test.theta_list[i][4])+","
                 pass_num += 1
@@ -1783,11 +1826,11 @@ class Application(tk.Frame):
             output_file.write(output_line)
 
         output_file.close()
-        print("良品数は{}、不良品数は{}、歩留まりは{}%".format(pass_num,fail_num,pass_num*100/(pass_num+fail_num)))
+        print("良品数は{}、不良品数は{}、不明なものは{}、歩留まりは{}%".format(pass_num,fail_num,unknown_num,"%.1f"%(pass_num*100/(pass_num+fail_num+unknown_num))))
 
-        if MASSPRODUCTION_MODE==True and pass_num/(pass_num+fail_num) < YIELD_STANDARD:
-            print("歩留まりが低いです\n不良チップの目視確認をお願いします")
-            messagebox.showinfo("確認","目視確認を実施してください\n良品数は{}、不良品数は{}".format(pass_num,fail_num))
+        if (MASSPRODUCTION_MODE==True and pass_num/(pass_num+fail_num) < YIELD_STANDARD) or (MASSPRODUCTION_MODE==True and unknown_num!=0):
+            print("歩留まりが低い もしくは 検査できなかったチップがあったため不良チップの目視確認をお願いします")
+            messagebox.showinfo("確認","目視確認を実施してください\n良品数は{}、不良品数は{}、未検査チップ数は{}".format(pass_num,fail_num,unknown_num))
             self.result_analysis(type_name,lot_no)
             print("目視確認用ポップアップを表示します")
             self.create_popup(traydata_info,serial_list,test_image_files,pass_fail_list,lot_no)
@@ -1803,7 +1846,11 @@ class Application(tk.Frame):
             self.pass_fail_list = pass_fail_list
             self.output_traydata()
             print("正常終了")
-
+        elif MASSPRODUCTION_MODE==False:        
+            if test_mode == 1:
+                #処理ロットが1つであればポップアップ表示と解析用の処理をする
+                messagebox.showinfo("確認","処理が正常に終了しました\n良品数は{}、不良品数は{}".format(pass_num,fail_num))
+                self.result_analysis(type_name,lot_no)
         return
 
 if __name__ == "__main__":
