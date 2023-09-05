@@ -11,6 +11,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn import svm
 import pickle
 import shutil
+from math import sin,cos
 
 """定数"""
 class insp:
@@ -359,9 +360,6 @@ class insp:
         rb= np.zeros(2,dtype=int)
         lb= np.zeros(2,dtype=int)
 
-        rectlt= np.zeros(2,dtype=int)
-        rectrb= np.zeros(2,dtype=int)
-
         t = a_b_list[0] 
         r = a_b_list[1] 
         b = a_b_list[2] 
@@ -396,8 +394,6 @@ class insp:
             return 0,180
 
         img_slice = img[y-self.PADDING_Y*2:y+h+self.PADDING_Y*2,x-self.PADDING_X*2:x+w+self.PADDING_X*2]
-        #debug 23/09/03
-        cv2.imwrite(self.OUTPUT_ALL_IMAGE+"img_slice.jpg",img_slice)
         center = np.array([x+w/2,y+h/2])
 
         #左上の角度を求める
@@ -417,17 +413,128 @@ class insp:
         #    thetaRB = thetaRB*-1
 
         #角度は2つの角度の平均を取る
-        #theta = min(thetaLT,thetaRB)
         theta = (thetaLT+thetaRB)/2
 
         #rot_matrix = cv2.getRotationMatrix2D((w/2,h/2),np.degrees(theta),1)
         rot_matrix = cv2.getRotationMatrix2D((w/2,h/2),theta,1)
 
         img_affine = cv2.warpAffine(img_slice,rot_matrix,(w+self.PADDING_X*2,h+self.PADDING_Y*2))
-        #debug 23/09/03
-        cv2.imwrite(self.OUTPUT_ALL_IMAGE+"img_affine.jpg",img_affine)
 
         return img_affine,theta
+    
+    #画像取得ver2
+    #23/09/04
+    def get_rotate_image_ver2(self,img,a_b_list):
+       #a_b_list
+        #0->top, 1->right, 2->bottom, 3->left
+        #チップを回転させた画像を取得
+        lt= np.zeros(2,dtype=int)
+        rt= np.zeros(2,dtype=int)
+        rb= np.zeros(2,dtype=int)
+        lb= np.zeros(2,dtype=int)
+
+        t = a_b_list[0] 
+        r = a_b_list[1] 
+        b = a_b_list[2] 
+        l = a_b_list[3] 
+
+        #チップの左上の点
+        lt[0] = int((l[1]-t[1])/(t[0]-l[0]))
+        lt[1] = int(t[0]*lt[0] + t[1])
+
+        #チップの右上の点
+        rt[0] = int((r[1]-t[1])/(t[0]-r[0]))
+        rt[1] = int(t[0]*rt[0] + t[1])
+
+        #チップの右下の点
+        rb[0] = int((r[1]-b[1])/(b[0]-r[0]))
+        rb[1] = int(b[0]*rb[0] + b[1])
+
+        #チップの左下の点
+        lb[0] = int((l[1]-b[1])/(b[0]-l[0]))
+        lb[1] = int(b[0]*lb[0] + b[1])
+
+        #外接四角形の情報 x,y,w,h
+        x = min([lt[0],rt[0],rb[0],lb[0]])
+        y = min([lt[1],rt[1],rb[1],lb[1]])
+        w = max([lt[0],rt[0],rb[0],lb[0]]) - x
+        h = max([lt[1],rt[1],rb[1],lb[1]]) - y
+
+        if (w<self.CHIP_SIZE_CHK_1 or w>self.CHIP_SIZE_CHK_2) or (h<self.CHIP_SIZE_CHK_1 or h>self.CHIP_SIZE_CHK_2):
+            #チップの外形が明らかにおかしい場合処理を止める
+            print("チップの外形がおかしいです")
+            print("幅{}、高さ{}".format(w,h))
+            return 0,180
+
+        #img_slice = img[y-self.PADDING_Y*2:y+h+self.PADDING_Y*2,x-self.PADDING_X*2:x+w+self.PADDING_X*2]
+        #chipの中心
+        chip_center = np.array([x+w/2,y+h/2])
+
+        #左上の角度を求める
+        center2chipLT = lt - chip_center
+        center2rectLT = np.array([x,y]) - chip_center
+        thetaLT = np.degrees(np.arccos(np.dot(center2chipLT,center2rectLT)/(np.linalg.norm(center2chipLT)*np.linalg.norm(center2rectLT))))
+
+        #右下の角度を求める
+        center2chipRB = rb - chip_center
+        center2rectRB = np.array([x+w,y+h]) - chip_center
+        thetaRB = np.degrees(np.arccos(np.dot(center2chipRB,center2rectRB)/(np.linalg.norm(center2chipRB)*np.linalg.norm(center2rectRB))))
+
+        #角度は2つの角度の平均を取る
+        height,width = img.shape
+        theta = (thetaLT+thetaRB)/2
+
+        #まずチップ中心を画像中心に移動する
+        dx_dy=np.array([int(width/2-chip_center[0]),int(height/2-chip_center[1])])
+        affine_matrix = np.float32([[1,0,dx_dy[0]],[0,1,dx_dy[1]]])
+        center_image = cv2.warpAffine(img,affine_matrix,(width,height))
+
+        #中心に移動した画像を回転する
+        rot_matrix = cv2.getRotationMatrix2D((width/2,height/2),theta,1)
+        img_affine = cv2.warpAffine(center_image,rot_matrix,(width,height))
+
+        #各角を平行移動・回転した後の角座標を出す
+        #↓移動
+        lt += dx_dy
+        lb += dx_dy
+        rt += dx_dy
+        rb += dx_dy
+
+        #↓回転
+        rc = np.array([width/2,height/2])
+        d=np.deg2rad(theta)
+        rot_m=np.array([[cos(d),-sin(d)],[sin(d),cos(d)]])
+        #左上
+        u = lt-rc
+        v = np.dot(rot_m,u)
+        lt = v+rc
+
+        #左下
+        u = lb-rc
+        v = np.dot(rot_m,u)
+        lb = v+rc
+
+        #右上
+        u = rt-rc
+        v = np.dot(rot_m,u)
+        rt = v+rc
+
+        #右下
+        u = rb-rc
+        v = np.dot(rot_m,u)
+        rb = v+rc
+
+        x=int((lt[0]+lb[0])/2)
+        y=int((lt[1]+rt[1])/2)
+        w=int((rt[0]+rb[0])/2)-x        
+        h=int((rb[1]+lb[1])/2)-y        
+        #↓良品学習に合わせるために無理やり1.5倍する
+        img_slice = img_affine[y-int(1.5*self.PADDING_Y):y+h+int(1.5*self.PADDING_Y),x-int(1.5*self.PADDING_X):x+w+int(1.5*self.PADDING_X)]
+
+        img_chip = cv2.resize(img_slice,(self.CHIP_IMAGE_SIZE+2*self.PADDING_X,self.CHIP_IMAGE_SIZE+2*self.PADDING_Y))
+        cv2.imwrite(self.OUTPUT_ALL_IMAGE+"img_chip.jpg",img_chip)
+
+        return img_chip,x,y,w,h
 
     #回転したチップ周辺画像からチップ周辺部分だけを抜き出す
     #flag->0 パディング有りの画像を返す、flag->1 パディング無しの画像を返す
@@ -437,7 +544,8 @@ class insp:
         kernel = np.ones((5,5),np.uint8)
 
         #輪郭取得用の二値化処理
-        _,img_affine_binary = cv2.threshold(img_affine,self.CHIP_THRESHOLD,255,cv2.THRESH_BINARY)
+        #_,img_affine_binary = cv2.threshold(img_affine,self.CHIP_THRESHOLD,255,cv2.THRESH_BINARY)
+        img_affine_binary = ((img_affine>self.CHIP_THRESHOLD)*255).astype("uint8")
 
         img_affine_binary = cv2.erode(img_affine_binary,kernel,iterations=self.ERODE_NUM)
         img_affine_binary = cv2.dilate(img_affine_binary,kernel,iterations=self.DILATE_NUM)
@@ -447,9 +555,9 @@ class insp:
 
         #取得した輪郭の中からチップ全体の輪郭を探す
         for i, contour in enumerate(outside_contours):
-
             x,y,w,h = cv2.boundingRect(contour)
-
+            print("contour")
+            print(x,y,w,h)
             if w<self.CHIP_SIZE_CHK_1 or h<self.CHIP_SIZE_CHK_1:
                 continue
            
@@ -557,6 +665,9 @@ class insp:
 
         a_b_list = self.get_line(image,self.rectangle_point)
         img_affine,theta= self.get_rotate_image(image,a_b_list)
+
+        #debug
+        self.get_rotate_image_ver2(image,a_b_list)
 
         if theta==180:
             #チップの位置補正に失敗した場合の処理

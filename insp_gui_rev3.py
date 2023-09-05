@@ -1668,15 +1668,15 @@ class Application(tk.Frame):
                 tmp.append(image_file)
                 test_images.append(tmp)
                 continue
-            
             if i%insp_test.ONE_TEST_SIZE==0:
                 tmp=[]
                 tmp.append(image_file)
                 continue
-
             tmp.append(image_file)
-
-        test_images.append(tmp) 
+        if test_num%insp_test.ONE_TEST_SIZE != 0: 
+            test_images.append(tmp)
+        del tmp
+        gc.collect() 
 
         #テストメインループ
         #結果を入れるリストを複数フィルターに対応するように初期化
