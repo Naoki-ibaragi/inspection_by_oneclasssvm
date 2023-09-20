@@ -2,6 +2,7 @@
 """rev1 23/06/25 作成"""
 """rev2 23/07/05 作成 template matchingをtmpとtestで逆転"""
 """rev3 23/07/08 作成 スプリットデータで区切る前にフィルターをかける"""
+"""rev4 23/09/13 作成 アライメント方法を2種類準備"""
 import os
 import sys
 import numpy as np
@@ -57,6 +58,9 @@ class insp:
         self.SPLIT_DATA_FILE = []
         self.PICKLE_MODEL_FILE = ""
         self.PICKLE_SCORE_FILE = ""
+
+        #アライメント方法の指定
+        self.ALIGNMENT_TYPE = 1
 
         #矩形リストの初期値
         #0->top, 1->right, 2->bottom, 3->left
@@ -119,6 +123,8 @@ class insp:
                 self.DILATE_NUM = int(setting_item[1])
             elif setting_item[0] == "ONE_TEST_SIZE":
                 self.ONE_TEST_SIZE = int(setting_item[1])
+            elif setting_item[0] == "IMAGE_TYPE":
+                self.IMAGE_TYPE = setting_item[1]
             elif setting_item[0] == "PROCESS_PARENT_IMAGE":
                 self.PROCESS_PARENT_IMAGE = int(setting_item[1])
             elif setting_item[0] == "PARENT_IMAGE_NAME":
@@ -198,7 +204,6 @@ class insp:
             shutil.copy(setting_file_address,setting_file_address_to)
         else:
             return 1
-
         return
 
     #チップの各辺の傾きを求める
@@ -212,10 +217,11 @@ class insp:
         threshold = self.CHIP_THRESHOLD
 
         #ノイズ除去
-        kernel = np.ones((5,5),np.uint8)
+        #kernel = np.ones((5,5),np.uint8)
         _,img = cv2.threshold(img,threshold,255,cv2.THRESH_BINARY)
-        img = cv2.erode(img,kernel,iterations=self.ERODE_NUM)
-        img = cv2.dilate(img,kernel,iterations=self.DILATE_NUM)
+        #dilateを先にする
+        #img = cv2.dilate(img,kernel,iterations=self.DILATE_NUM)
+        #img = cv2.erode(img,kernel,iterations=self.ERODE_NUM)
 
         #top->right->bottom->leftでループを回す
         for n,p in enumerate(rp):
@@ -417,7 +423,6 @@ class insp:
 
         #rot_matrix = cv2.getRotationMatrix2D((w/2,h/2),np.degrees(theta),1)
         rot_matrix = cv2.getRotationMatrix2D((w/2,h/2),theta,1)
-
         img_affine = cv2.warpAffine(img_slice,rot_matrix,(w+self.PADDING_X*2,h+self.PADDING_Y*2))
 
         return img_affine,theta
@@ -464,7 +469,7 @@ class insp:
             #チップの外形が明らかにおかしい場合処理を止める
             print("チップの外形がおかしいです")
             print("幅{}、高さ{}".format(w,h))
-            return 0,180
+            return 0,180,0,0,0,0
 
         #img_slice = img[y-self.PADDING_Y*2:y+h+self.PADDING_Y*2,x-self.PADDING_X*2:x+w+self.PADDING_X*2]
         #chipの中心
@@ -529,35 +534,41 @@ class insp:
         w=int((rt[0]+rb[0])/2)-x        
         h=int((rb[1]+lb[1])/2)-y        
         #↓良品学習に合わせるために無理やり1.5倍する
-        img_slice = img_affine[y-int(1.5*self.PADDING_Y):y+h+int(1.5*self.PADDING_Y),x-int(1.5*self.PADDING_X):x+w+int(1.5*self.PADDING_X)]
+        #img_slice = img_affine[y-int(1.5*self.PADDING_Y):y+h+int(1.5*self.PADDING_Y),x-int(1.5*self.PADDING_X):x+w+int(1.5*self.PADDING_X)]
+        img_slice = img_affine[y-self.PADDING_Y:y+h+self.PADDING_Y,x-self.PADDING_X:x+w+self.PADDING_X]
 
         img_chip = cv2.resize(img_slice,(self.CHIP_IMAGE_SIZE+2*self.PADDING_X,self.CHIP_IMAGE_SIZE+2*self.PADDING_Y))
-        cv2.imwrite(self.OUTPUT_ALL_IMAGE+"img_chip.jpg",img_chip)
 
-        return img_chip,x,y,w,h
+        return img_chip,theta,x,y,w,h
 
     #回転したチップ周辺画像からチップ周辺部分だけを抜き出す
     #flag->0 パディング有りの画像を返す、flag->1 パディング無しの画像を返す
-    def get_chip_image(self,img_affine,flag):
+    def get_chip_image(self,img_affine,flag,n):
 
         #縮小・膨張処理用のカーネル
         kernel = np.ones((5,5),np.uint8)
 
+
+        #for debug
+        output_name =  "c:\\workspace\\debug_image\\"+str(n)+".jpg" 
+        cv2.imwrite(output_name,img_affine)      
+
         #輪郭取得用の二値化処理
-        #_,img_affine_binary = cv2.threshold(img_affine,self.CHIP_THRESHOLD,255,cv2.THRESH_BINARY)
         img_affine_binary = ((img_affine>self.CHIP_THRESHOLD)*255).astype("uint8")
 
+        #細かいノイズ除去のためerode->dilateを先に1回ずつ実施.その後に通常のノイズ消しをする
+        img_affine_binary = cv2.dilate(img_affine_binary,kernel,iterations=1)
+        img_affine_binary = cv2.erode(img_affine_binary,kernel,iterations=1)
         img_affine_binary = cv2.erode(img_affine_binary,kernel,iterations=self.ERODE_NUM)
         img_affine_binary = cv2.dilate(img_affine_binary,kernel,iterations=self.DILATE_NUM)
 
         #findContoursで輪郭取得
         outside_contours, hierarchy = cv2.findContours(img_affine_binary,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
 
+
         #取得した輪郭の中からチップ全体の輪郭を探す
         for i, contour in enumerate(outside_contours):
             x,y,w,h = cv2.boundingRect(contour)
-            print("contour")
-            print(x,y,w,h)
             if w<self.CHIP_SIZE_CHK_1 or h<self.CHIP_SIZE_CHK_1:
                 continue
            
@@ -583,7 +594,7 @@ class insp:
         parent_img = cv2.imread(parent_img_path,cv2.IMREAD_GRAYSCALE)
         a_b_list = self.get_line(parent_img,self.rectangle_point)
         img_good_affine,_=self.get_rotate_image(parent_img,a_b_list)
-        img_good,_,_,_,_ = self.get_chip_image(img_good_affine,0)
+        img_good,_,_,_,_ = self.get_chip_image(img_good_affine,0,1)
            
         return img_good
 
@@ -619,7 +630,6 @@ class insp:
 
     #ノイズ除去用の輝度調整
     def adjust(self,image,alpha,beta):
-
         adjust_image = alpha*image+beta
         return np.clip(adjust_image,0,255).astype(np.uint8)
 
@@ -664,10 +674,11 @@ class insp:
         diff_image_list=[[] for i in range(len(self.FILTER_LIST))] #最終結果を入れるリスト
 
         a_b_list = self.get_line(image,self.rectangle_point)
-        img_affine,theta= self.get_rotate_image(image,a_b_list)
-
-        #debug
-        self.get_rotate_image_ver2(image,a_b_list)
+        #アライメント方法を複数準備
+        if self.ALIGNMENT_TYPE == 1:
+            img_affine,theta= self.get_rotate_image(image,a_b_list)
+        elif self.ALIGNMENT_TYPE == 2:
+            img,theta,x,y,w,h=self.get_rotate_image_ver2(image,a_b_list)
 
         if theta==180:
             #チップの位置補正に失敗した場合の処理
@@ -680,7 +691,8 @@ class insp:
         else:
             self.success_get_chip_image.append(True)
 
-        img,x,y,w,h = self.get_chip_image(img_affine,0)
+        if self.ALIGNMENT_TYPE == 1:
+            img,x,y,w,h = self.get_chip_image(img_affine,0,n)
 
         #お手本との輝度合わせを実施する
         if self.BRIGHTNESS_MATCH==1:
@@ -692,11 +704,11 @@ class insp:
             #テスト時
             print("\r{}枚目 {}を処理中".format(n,img_path),end="")
             self.theta_list.append([theta,x,y,w,h])
-            #img_name = self.OUTPUT_ALL_IMAGE+img_path.split("/")[-1].split(".")[0]+".jpg" #for linux
-            img_name = self.OUTPUT_ALL_IMAGE+img_path.split("\\")[-1].split(".")[0]+".jpg" #for windows
+            img_name = self.OUTPUT_ALL_IMAGE+img_path.split("/")[-1].split(".")[0]+".jpg" #for linux
+            #img_name = self.OUTPUT_ALL_IMAGE+img_path.split("\\")[-1].split(".")[0]+".jpg" #for windows
             write_status=cv2.imwrite(img_name,img)
             if not write_status is True:
-                print("{}のall_imageへの書き込みに失敗しました".format(img_name))
+                print("\n{}のall_imageへの書き込みに失敗しました".format(img_name))
         elif mode==1:
             #良品学習時
             print("\r{}枚目 {}を処理中".format(n,img_path),end="")

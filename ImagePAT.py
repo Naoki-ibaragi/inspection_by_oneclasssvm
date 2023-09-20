@@ -21,8 +21,8 @@ VERSION 5.1 トレイデータ・外観結果ファイル読み込みモード�
 VERSION 5.2 位置補正に失敗した場合に処理を続行できるように変更
 VERSION 5.3 画像の種類AA,AB,ACをsetting.txtから設定できるように変更
 """
-VERSION_INFO = "5.2"
-DATE_INFO = "2023/9/1"
+VERSION_INFO = "1.1"
+DATE_INFO = "2023/9/20"
 MASSPRODUCTION_MODE = True
 YIELD_STANDARD = 0.98
 
@@ -31,7 +31,7 @@ class Application(tk.Frame):
         super().__init__(master)
         self.pack() 
  
-        self.my_title = "Inspection By Oneclasssvm"  # タイトル
+        self.my_title = "ImagePAT"  # タイトル
         self.back_color = "#FFFFFF"     # 背景色
 
         # ウィンドウの設定
