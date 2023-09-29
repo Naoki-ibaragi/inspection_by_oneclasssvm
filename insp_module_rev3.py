@@ -199,6 +199,7 @@ class insp:
         setting_file_address_to = result_folder + "setting.txt"
 
         #resultフォルダーを作成する
+        print(result_folder)
         if not os.path.exists(result_folder):
             os.makedirs(result_folder)
             shutil.copy(setting_file_address,setting_file_address_to)

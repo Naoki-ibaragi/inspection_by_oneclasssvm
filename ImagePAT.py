@@ -15,15 +15,17 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg,NavigationToolba
 import subprocess
 import gc
 import datetime
+import logging
+import threading
+
 """
-VERSION 4.1 複数条件の処理に対応可能なように変更
-VERSION 5.1 トレイデータ・外観結果ファイル読み込みモードに対応
-VERSION 5.2 位置補正に失敗した場合に処理を続行できるように変更
-VERSION 5.3 画像の種類AA,AB,ACをsetting.txtから設定できるように変更
+23/09/20 VERSION 1.1 初版
+23/09/25 VERSION 1.2 loggerを追加 (output_folderに.logファイルを出力)
 """
-VERSION_INFO = "1.1"
-DATE_INFO = "2023/9/20"
-MASSPRODUCTION_MODE = True
+
+VERSION_INFO = "1.2"
+DATE_INFO = "2023/9/25"
+MASSPRODUCTION_MODE = False
 YIELD_STANDARD = 0.98
 
 class Application(tk.Frame):
@@ -1403,8 +1405,6 @@ class Application(tk.Frame):
 
         #テキストボックス初期化
         self.log_text.delete("1.0","end")
-        #スタート時の日付を記入
-        self.log_text.insert(tk.END,"処理開始時刻：{}\n".format(datetime.datetime.now()))
 
         #異常対応
         if lot_no_num != type_name_num:
@@ -1414,16 +1414,21 @@ class Application(tk.Frame):
             self.log_text.insert(tk.END,"ロットNoが入力されていません\n")
             return
         elif type_name == "":
-            self.log_text.insert(tk.END,"ロットNoが入力されていません\n")
+            self.log_text.insert(tk.END,"機種名が入力されていません\n")
             return
-        
+
         if lot_no_num == 1:
-            self.main_process(lot_no,type_name,1)
+            self.thread_main = threading.Thread(target=self.main_process(lot_no,type_name,1))
+            self.thread_main.start()
+            #self.main_process(lot_no,type_name,1)
         elif lot_no_num > 1:
+            #指定されているロットNoが複数の場合
             lot_no_list = lot_no.split(",")
             type_name_list = type_name.split(",")
+            self.thread_main = threading.Thread(target=self.main_process(lot_no,type_name,1))
             for i,lot in enumerate(lot_no_list):
-                self.main_process(lot,type_name_list[i],2)
+                self.thread_main.start()
+                #self.main_process(lot,type_name_list[i],2)
 
         return
 
@@ -1439,6 +1444,11 @@ class Application(tk.Frame):
         if n==1:
             self.log_text.insert(tk.END,"ロット結果フォルダが既に存在しています\n")
             return
+        else:
+            #logger設定
+            log_file_name = self.output_result_address.replace("%LOT%",lot_no).replace("%PRODUCT%",type_name)+lot_no+"_log.log" #ログファイル置き場
+            logging.basicConfig(filename=log_file_name,format='%(asctime)s %(message)s',datefmt="%Y/%m/%d %I:%M:%S %p", level=logging.DEBUG)
+            logging.info("機種 : {} ロットNo : {} ロットスタート".format(type_name,lot_no)) 
 
         #分割情報,規格情報を取得
         if insp_test.STD_TYPE == "FIX":
@@ -1461,11 +1471,13 @@ class Application(tk.Frame):
         """
         #初めにお手本画像を作成する
         if insp_test.PROCESS_PARENT_IMAGE == 1:
+            logging.info("親画像作成") 
             img_good_average = insp_test.get_parent_img(insp_test.PARENT_IMG_FILE)
             #加工後の画像を出力する
             cv2.imwrite(self.parameter_address.replace("%LOT%",lot_no).replace("%PRODUCT%",type_name)+"parent_img_after_processing.jpg",img_good_average)
         else:
             #すでに加工済みのものを読み込む
+            logging.info("親画像読込") 
             img_good_average = cv2.imread(insp_test.PARENT_IMG_FILE,cv2.IMREAD_GRAYSCALE)
 
         #お手本画像との輝度合わせ用にデータを取得
@@ -1480,6 +1492,7 @@ class Application(tk.Frame):
         if self.process_mode ==1 or self.process_mode==2:
             #良品画像読み込み
             print("良品画像読み込み中")
+            logging.info("良品画像読込開始") 
             good_image_list = []
             good_folder_list = os.listdir(insp_test.GOOD_SAMPLE_FOLDER)
 
@@ -1511,9 +1524,11 @@ class Application(tk.Frame):
             del tmp
             gc.collect() 
             print("良品画像数は{}枚です".format(good_num))
+            logging.info("良品画像 {}枚".format(good_num))
 
             #良品画像と平均画像の差分ベクトルを作成
             print("良品の差分ベクトル作成中")
+            logging.info("良品画像のモデル作成開始")
             #good_diff_image_listを初期化
             good_diff_image_list = []
             for i in range(len(split_num)):
@@ -1531,11 +1546,11 @@ class Application(tk.Frame):
 
                 #差分ベクトルをgood_diff_image_listに入れていく(good_diff_image_listはsplit_numのおおきさ)
                 for j,image in enumerate(good_image_list):
+                    logging.info("{} {}を読込".format(i*insp_test.ONE_TEST_SIZE+j+1,img_name_list[j]))
                     diff_image_list = insp_test.get_diff_image_list(img_good_average,image,brightness_data,i*insp_test.ONE_TEST_SIZE+j+1,1,img_name_list[j])
                     for k,s in enumerate(split_num):
                         for l in range(s):
                             good_diff_image_list[k][l].append(diff_image_list[k][l])
-
                     del diff_image_list
                     gc.collect()
 
@@ -1545,16 +1560,19 @@ class Application(tk.Frame):
 
             #one-class-svmで良品学習
             print("\n良品学習中")
+            logging.info("機械学習モデル作成")
             models = insp_test.learn_good_feature(good_diff_image_list)
 
             #スコア判定規格設定
             print("\nスコア判定規格設定中")
+            logging.info("規格設定")
             good_scores = insp_test.good_predict(models,good_diff_image_list)
             del good_diff_image_list
             gc.collect()
 
             #one-class-svmで良品学習
-            print("良品学習中")
+            print("良品結果書き出し")
+            logging.info("良品結果書き出し")
             """良品スコアのcsvへの書き出し"""
             output_file = open(insp_test.GOOD_RESULT_FILE,"w")
             #header
@@ -1576,19 +1594,25 @@ class Application(tk.Frame):
         elif self.process_mode==0:
             #pickleファイルを読み込んで良品学習をスキップ
             print("モデルpickleファイルを読み込み")
+            logging.info("機械学習モデルを読込")
             models = insp_test.load_model_pickle()
             print("スコアpickleファイルを読み込み")
+            logging.info("スコアを読込")
             good_scores = insp_test.load_score_pickle()
         elif self.process_mode==3:
             #pickleファイルを読み込んで良品学習をスキップ
             print("PATモード")
+            logging.info("PATモードで処理")
             print("モデルpickleファイルを読み込み")
+            logging.info("機械学習モデルを読込")
             models = insp_test.load_model_pickle()
 
         if self.process_mode == 2:
             """良品学習のみの場合"""
             print("良品学習完了")
+            logging.info("良品学習処理完了")
             print("正常終了")
+            logging.info("正常終了")
             return
 
         #規格設定
@@ -1600,19 +1624,21 @@ class Application(tk.Frame):
         """
         ここからテスト開始
         memory error回避のため100枚ずつテスト
-        
         """
         #テストデータ読み込み
         print("テスト画像読み込み開始")
+        logging.info("テスト画像読込開始")
 
         if MASSPRODUCTION_MODE == True:
             """トレイデータ読み込み"""
             print("トレイデータ読み込み")
+            logging.info("トレイデータ読込")
             traydata_info=[]
             traydata_list = glob.glob(self.traydatafile_address.replace("%LOT%",lot_no)+lot_no+"*-*.csv")
             for traydata_name in traydata_list:
                 traydata = open(traydata_name,"r")
                 print("トレイデータ{}を読込".format(traydata_name))
+                logging.info("トレイデータ{}を読込".format(traydata_name))
                 traydata_line = traydata.readline()
                 n=0
                 while traydata_line:
@@ -1632,6 +1658,7 @@ class Application(tk.Frame):
             serial_list = []
             surf_result_name = self.surf_resultfile_address.replace("%LOT%",lot_no)+"result1_"+lot_no+"_Vision1.csv"
             print("外観結果ファイル{}を読込".format(surf_result_name))
+            logging.info("外観結果ファイル{}を読込".format(surf_result_name))
             surf_result_file = open(surf_result_name,"r")
             result_line = surf_result_file.readline()
             n=1
@@ -1647,6 +1674,7 @@ class Application(tk.Frame):
                             imgname = insp_test.TEST_SAMPLE_FOLDER + "%05d"%num+insp_test.IMAGE_TYPE+".jpg"
                             if not os.path.exists(imgname):
                                 print("{}が存在しません".format(imgname))
+                                logging.error("{}が存在しません".format(imgname))
                                 return
                             serial_list.append(serial)
                             test_image_files.append(imgname) 
@@ -1655,10 +1683,12 @@ class Application(tk.Frame):
             surf_result_file.close() 
             test_num=len(test_image_files)
             print("テスト画像数は{}枚です".format(test_num))
+            logging.info("テスト画像数 {}".format(test_num))
         else:
             test_image_files = glob.glob(insp_test.TEST_SAMPLE_FOLDER+"*"+insp_test.IMAGE_TYPE+".JPG")
             test_num = len(test_image_files)
             print("テスト画像数は{}枚です".format(test_num))
+            logging.info("テスト画像数 {}".format(test_num))
 
         #ONE_TEST_SIZE区切りの2次元配列に変換
         test_images=[]
@@ -1711,10 +1741,12 @@ class Application(tk.Frame):
             for j,image in enumerate(test_image_list):
                 '''複数フィルターに対応できるように変更'''
                 '''位置補正に失敗した場合に対応 23/9/2'''
+                logging.info("{} {}を読込".format(i*insp_test.ONE_TEST_SIZE+j,img_name_list[j]))
                 diff_image_list = insp_test.get_diff_image_list(img_good_average,image,brightness_data,i*insp_test.ONE_TEST_SIZE+j+1,0,img_name_list[j])
                 if diff_image_list == 0:
                     success_get_chip_image_onetestsize.append(False)
                     '''位置補正失敗した場合はtest_diff_image_listに入れない'''
+                    logging.warning("位置補正失敗")
                     continue
                 success_get_chip_image_onetestsize.append(True)
                 for k,s in enumerate(split_num):
@@ -1750,10 +1782,12 @@ class Application(tk.Frame):
 
         print("\n画像評価完了")
         print("判定中")
+        logging.info("テスト画像評価完了")
 
         #全ての位置情報取得に失敗した場合
         if insp_test.success_get_chip_image.count(False)==test_num:
             print("全ての画像の位置情報取得に失敗しました")
+            logging.error("全画像の位置情報取得に失敗")
             return
 
         #PATモードの場合
@@ -1813,11 +1847,6 @@ class Application(tk.Frame):
                 pass_num += 1
                 pass_fail_list.append("Pass")
 
-            #各矩形のp/f(0/1)出力
-            #for j in range(len(split_num)): #分割数
-            #    for k in range(split_num[j]):
-            #        output_line+=judge_results[j][i][k]+","
-
             #score出力
             for j in range(len(split_num)):
                 for p in output_predictions[j][i]:
@@ -1828,6 +1857,8 @@ class Application(tk.Frame):
 
         output_file.close()
         print("良品数は{}、不良品数は{}、不明なものは{}、歩留まりは{}%".format(pass_num,fail_num,unknown_num,"%.1f"%(pass_num*100/(pass_num+fail_num+unknown_num))))
+        logging.info("処理完了")
+        logging.info("良品数は{}、不良品数は{}、不明なものは{}、歩留まりは{}%".format(pass_num,fail_num,unknown_num,"%.1f"%(pass_num*100/(pass_num+fail_num+unknown_num))))
 
         if (MASSPRODUCTION_MODE==True and pass_num/(pass_num+fail_num) < YIELD_STANDARD) or (MASSPRODUCTION_MODE==True and unknown_num!=0):
             print("歩留まりが低い もしくは 検査できなかったチップがあったため不良チップの目視確認をお願いします")
